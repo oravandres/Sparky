@@ -59,6 +59,20 @@ sudo journalctl -u k3s-agent -f
 kubectl get nodes
 ```
 
+## Local quality checks
+
+CI runs lint + tests + secret scan on every PR and push to `main` (see `PLAN.md` §22).
+Run the same gates locally before pushing:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+Individual tools used (all wired into `.pre-commit-config.yaml` and `.github/workflows/ci.yml`):
+`ruff`, `mypy`, `pytest`, `yamllint`, `ansible-lint`, `shellcheck`, `markdownlint-cli2`, `gitleaks`.
+
 ## Project Structure
 
 ```
