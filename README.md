@@ -24,7 +24,7 @@ ansible-playbook playbooks/join-k3s.yml --ask-become-pass
 
 ## Overview
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────────────┐
 │                         Sparky (DGX Spark)                            │
 │           GB10 Grace Blackwell · 128GB Unified · ARM64                │
@@ -75,25 +75,25 @@ Individual tools used (all wired into `.pre-commit-config.yaml` and `.github/wor
 
 ## Project Structure
 
-```
+```text
 Sparky/
 ├── inventory/
-│   ├── hosts.yml               # Target hosts (localhost)
-│   └── group_vars/             # Variables (gitignored)
-│       └── all.yml.example     # Variable template
+│   ├── hosts.yml                  # Target hosts
+│   └── group_vars/                # Per-host vars (gitignored, ansible-vault)
+│       └── sparky.yml.example     # Vault template (PLAN.md §10)
 ├── playbooks/
-│   └── join-k3s.yml            # K3s agent join (ARM64)
-├── PLAN.md                     # Full architecture & phases (authoritative)
-├── AGENTS.md                   # Agent/editor orientation (with PLAN.md)
-├── .cursor/rules/             # Cursor Rules (*.mdc); PLAN.md wins on conflicts
-└── README.md                   # This file
+│   └── join-k3s.yml               # Optional K3s agent join (PLAN.md §2.1)
+├── PLAN.md                        # Architecture & phases (authoritative)
+├── AGENTS.md                      # Agent/editor orientation (with PLAN.md)
+├── .cursor/rules/                 # Cursor Rules (*.mdc); PLAN.md wins on conflicts
+└── README.md                      # This file
 ```
 
 ## Dependencies
 
 This repository depends on the [MiMi](../MiMi) repository being checked out as a sibling directory for the `k3s_agent` role:
 
-```
+```text
 Projects/
 ├── MiMi/          # K3s cluster management (provides k3s_agent role)
 ├── Sparky/        # This repo

@@ -232,6 +232,7 @@ Every entry below must be reflected exactly in `config/model-registry.yaml` (§7
 > **Pin-at-install rule:** "latest" is resolved at first install and recorded in `config/model-registry.yaml` as a commit SHA or revision tag. Subsequent updates are explicit PRs to the registry, never silent.
 
 > **Reference docs the agent must read before Phase 4:**
+>
 > - https://developer.nvidia.com/blog/introducing-nemotron-3-super-an-open-hybrid-mamba-transformer-moe-for-agentic-reasoning/
 > - https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
 > - https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/nemotron-3-super-120b-a12b
@@ -968,6 +969,7 @@ models:
 ```
 
 The gateway must:
+
 - reject requests for `active: false` models with a clear error,
 - never silently substitute a different model,
 - expose this list (filtered to `active: true`) at `GET /v1/models`.
