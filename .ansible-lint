@@ -1,0 +1,21 @@
+---
+# ansible-lint config — see PLAN.md §22
+profile: production
+
+exclude_paths:
+  - .ansible_cache/
+  - .github/
+  - .venv/
+  - inventory/group_vars/
+
+skip_list:
+  - role-name              # roles live flat under roles/, plus shared roles via ../MiMi/roles
+  - var-naming[no-role-prefix]
+
+warn_list:
+  - experimental
+  - fqcn[action-core]
+
+use_default_rules: true
+verbosity: 1
+offline: false

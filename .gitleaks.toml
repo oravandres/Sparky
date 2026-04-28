@@ -1,0 +1,28 @@
+# gitleaks config — see PLAN.md §10, §22
+# Allow only well-known example placeholders; reject real-looking secrets.
+
+title = "Sparky gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Example/placeholder values that are safe to commit"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)config/sparky\.env\.example$''',
+  '''(^|/)inventory/group_vars/[^/]+\.example$''',
+  '''(^|/)docs/.*\.md$''',
+  '''(^|/)README\.md$''',
+  '''(^|/)PLAN\.md$''',
+  '''(^|/)AGENTS\.md$''',
+]
+regexes = [
+  '''SPARKY_API_KEY=\s*$''',
+  '''SPARKY_API_KEY=changeme.*''',
+  '''SPARKY_API_KEY=<.*>''',
+  '''HF_TOKEN=\s*$''',
+  '''HF_TOKEN=hf_xxx.*''',
+  '''NGC_API_KEY=\s*$''',
+  '''NGC_API_KEY=nvapi-xxx.*''',
+]
