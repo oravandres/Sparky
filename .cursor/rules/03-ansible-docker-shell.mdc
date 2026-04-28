@@ -1,0 +1,18 @@
+---
+description: Ansible playbooks/roles/inventory and Docker Compose under Sparky
+globs:
+  - "playbooks/**/*.yml"
+  - "roles/**/*"
+  - "inventory/**/*"
+  - "docker/**/*"
+  - "ansible.cfg"
+  - "scripts/**/*.sh"
+alwaysApply: false
+---
+
+# Ansible & Docker
+
+- Keep the **flat Ansible layout** at repo root (`inventory/`, `playbooks/`, `roles/`)—do not nest under `ansible/` (PLAN §7.1).
+- Machine secrets belong in **ansible-vault**-encrypted `inventory/group_vars/sparky.yml`; commit only `sparky.yml.example` (PLAN §10).
+- Compose files must reference secrets via `env_file` or Docker secrets—not literal `environment:` secrets in tracked YAML (PLAN §10).
+- Shell scripts under `scripts/` should pass **shellcheck**; suitable for CI per PLAN §22.

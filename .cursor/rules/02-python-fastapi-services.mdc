@@ -1,0 +1,15 @@
+---
+description: Python services (sparky-gateway, sparky-worker, tests)
+globs:
+  - "services/**/*.py"
+  - "services/**/pyproject.toml"
+alwaysApply: false
+---
+
+# Python services
+
+- FastAPI + Pydantic; async handlers where outbound I/O dominates; structured logging (JSON to stdout when wired).
+- Preserve OpenAI-compatible shapes for `/v1/chat/completions` when PLAN specifies compatibility.
+- Strict JSON contracts for reasoning and agentic RAG endpoints—validate request/response against PLAN §5–§6 and keep `config/api-contract.yaml` aligned when present.
+- Use httpx with timeouts when calling local runtimes (vLLM, ComfyUI, audio service); never block the event loop with bare synchronous network calls in hot paths without offload.
+- Tests: pytest + pytest-asyncio; cover auth, health/ready, and at least one happy path + failure per router once code exists (PLAN §22).

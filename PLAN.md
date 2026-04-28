@@ -800,7 +800,10 @@ Sparky/
   ansible.cfg
   PLAN.md
   README.md
-  AGENTS.md                    # optional, mirrors other workspace repos
+  AGENTS.md                    # agent orientation; read with PLAN.md (not a substitute)
+  .cursor/
+    rules/
+      *.mdc                    # Cursor Rules; PLAN.md stays authoritative when they differ
   .env.example
   .gitignore
   .pre-commit-config.yaml      # see §22 CI/quality gates
@@ -1990,6 +1993,7 @@ Within each phase, finish P0 capabilities before P1 before P2 (priorities define
 
 ## 26. Agent Notes
 
+- **Cursor:** project rules live in `.cursor/rules/*.mdc`; high-level expectations and checklists live in `AGENTS.md`. The sibling repo **DarkBase** does not ship `.cursor` or `AGENTS.md` in-tree—Sparky’s files are derived from `PLAN.md` and patterns from repos like Maestro/Echo/MiMi.
 - Prefer official NVIDIA DGX Spark guidance for Nemotron (links pinned in §3).
 - Prefer NVIDIA-provided or model-maintainer-supported containers when available.
 - Keep raw runtime services local.

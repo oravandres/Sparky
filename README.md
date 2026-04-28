@@ -69,7 +69,9 @@ Sparky/
 │       └── all.yml.example     # Variable template
 ├── playbooks/
 │   └── join-k3s.yml            # K3s agent join (ARM64)
-├── PLAN.md                     # Project plan
+├── PLAN.md                     # Full architecture & phases (authoritative)
+├── AGENTS.md                   # Agent/editor orientation (with PLAN.md)
+├── .cursor/rules/             # Cursor Rules (*.mdc); PLAN.md wins on conflicts
 └── README.md                   # This file
 ```
 

@@ -1,0 +1,23 @@
+---
+description: Sparky mission, PLAN.md authority, and platform split (MiMi / DarkBase / Sparky)
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Sparky mission
+
+- Sparky is the **premium local intelligence machine** for the MiMi platform: Nemotron-class reasoning, agentic RAG stages, coding intelligence, ComfyUI media, and audio—behind **one authenticated gateway** (PLAN §1, §5).
+- **Not** the control plane: MiMi owns K3s orchestration, storage, queues, GitOps, primary RAG DBs, and monitoring ownership.
+- **DarkBase** is the fast RTX worker; Sparky does not replace routine daily assistant or default embedding/rerank ownership (PLAN §1.2, §6.1).
+
+## Source of truth
+
+- Read **PLAN.md** for phases, API contracts, repository layout, approved model matrix, secrets sourcing, CI bar, and definition of done.
+- If Cursor rules disagree with PLAN.md, **PLAN.md wins**.
+
+## Implementation stance
+
+- API-first; gateway on port 8080 with Bearer auth (PLAN §2.3, §5).
+- Latest-approved-models-only; never silently downgrade or swap in excluded models (PLAN §2.2).
+- Prefer systemd + Docker Compose on the host; optional K3s agent join only with labels/taints per PLAN §2.1.

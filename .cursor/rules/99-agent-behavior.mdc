@@ -1,0 +1,20 @@
+---
+description: How the coding agent should work in this repository
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Working method
+
+- Inspect existing tree, naming, and tests before editing; Sparky is early—prefer small, coherent additions over large reshuffles.
+- Make the smallest complete change that satisfies the task and PLAN.md.
+- Do not rename top-level Ansible/compose layout without an explicit PLAN-driven reason.
+- When adding features, cite the PLAN section you are implementing (in commit message or PR body).
+
+## Completion checklist
+
+- No committed secrets or real `.env` files.
+- New or changed routes reflected in OpenAPI/registry files when those files exist.
+- Tests or smoke scripts updated when behavior is user-visible.
+- Documentation touch (`docs/` or PLAN cross-links) when operator steps change.
