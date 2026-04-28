@@ -1,8 +1,48 @@
-.ansible_cache
+# Ansible
+.ansible_cache/
 *.retry
-.vscode
-.idea
+.vault_pass
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
 *.log
 
-# Credentials (use ansible-vault in production)
-inventory/group_vars/
+# Local credentials and machine-specific overrides
+# (PLAN.md §10 — only commit *.example, real secrets via MiMi-Secrets / ansible-vault)
+inventory/group_vars/*
+!inventory/group_vars/*.example
+.env
+.env.*
+!.env.example
+config/sparky.env
+!config/sparky.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pre-commit
+.pre-commit-trash/
