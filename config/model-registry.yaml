@@ -1,0 +1,238 @@
+---
+# Sparky model registry — canonical mapping the gateway uses to resolve
+# model IDs to runtimes. See PLAN.md §3 (approved matrix), §7.3 (schema),
+# and §4.3 (co-residency / eviction policy).
+#
+# Rules (PLAN §3, §7.3, §25):
+#   - "Latest" is resolved at install time and PINNED here as a `revision`
+#     (HF commit SHA or tag). Updates are explicit PRs, never silent.
+#   - Approved set only — no fallbacks (e.g. FLUX.1, SDXL, SD3.x, Whisper,
+#     Kokoro, generic Ollama). Adding non-approved entries is rejected.
+#   - The gateway exposes only `active: true` models at GET /v1/models and
+#     emits the `state` field at runtime (hot|cold|loading|evicting).
+#
+# `revision` placeholders read "TBD-pin-at-install" until the operator
+# resolves them on the host during Phase 4 (PLAN §13). CI will refuse
+# to deploy a model whose `revision` is still TBD-* once enforcement
+# lands in PR 6+.
+
+version: 1
+
+defaults:
+  weights_root: /data/models
+  cache_root: /data/cache
+  outputs_root: /data/outputs
+
+co_residency:
+  # See PLAN §4.3. Tier A is always hot, Tier B is single-slot media,
+  # Tier C is small (TTS/ASR) and may co-reside with media.
+  vram_headroom_gb: 8
+  default_eviction_idle_minutes: 15
+
+models:
+  # --- Tier A: premium text / reasoning (always hot) -----------------
+  - id: nemotron-3-super-120b-a12b-nvfp4
+    family: text
+    role: premium-text
+    tier: A
+    hf_repo: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+    revision: TBD-pin-at-install
+    runtime: vllm
+    runtime_url: http://127.0.0.1:8000
+    fallback_runtime: trtllm
+    fallback_runtime_url: http://127.0.0.1:8001
+    weights_path: /data/models/text/nemotron-3-super-120b-a12b-nvfp4
+    approx_size_gb: 70
+    vram_estimate_gb: 70
+    priority: P0
+    active: true
+    co_resident: false
+    eviction_idle_minutes: null
+
+  # --- Tier B: image (single-slot, evictable) ------------------------
+  - id: flux2-dev
+    family: image
+    role: premium-image
+    tier: B
+    hf_repo: black-forest-labs/FLUX.2-dev
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/image/flux2-dev
+    approx_size_gb: 24
+    vram_estimate_gb: 25
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+
+  - id: flux2-klein
+    family: image
+    role: premium-image
+    tier: B
+    hf_repo: black-forest-labs/FLUX.2-klein
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/image/flux2-klein
+    approx_size_gb: 24
+    vram_estimate_gb: 25
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+    notes: >-
+      Open-license fallback for FLUX.2-dev consumers when license matters
+      (PLAN §3).
+
+  - id: qwen-image
+    family: image
+    role: premium-image
+    tier: B
+    hf_repo: Qwen/Qwen-Image
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/image/qwen-image
+    approx_size_gb: 20
+    vram_estimate_gb: 22
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+
+  - id: hunyuanimage-3-instruct
+    family: image
+    role: premium-image
+    tier: B
+    hf_repo: tencent/HunyuanImage-3.0-Instruct
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/image/hunyuanimage-3-instruct
+    approx_size_gb: 160
+    vram_estimate_gb: 60
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+    notes: >-
+      80B MoE — verify 600 GB free disk budget before enabling.
+
+  # --- Tier B: video (single-slot, evictable) ------------------------
+  - id: ltx-2
+    family: video
+    role: premium-video
+    tier: B
+    hf_repo: Lightricks/LTX-Video-2
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/video/ltx-2
+    approx_size_gb: 30
+    vram_estimate_gb: 30
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+
+  - id: wan-2.2
+    family: video
+    role: premium-video
+    tier: B
+    hf_repo: Wan-AI/Wan2.2
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/video/wan-2.2
+    approx_size_gb: 30
+    vram_estimate_gb: 30
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+
+  - id: hunyuanvideo-1.5
+    family: video
+    role: premium-video
+    tier: B
+    hf_repo: tencent/HunyuanVideo-1.5
+    revision: TBD-pin-at-install
+    runtime: comfyui
+    runtime_url: http://127.0.0.1:8188
+    weights_path: /data/models/video/hunyuanvideo-1.5
+    approx_size_gb: 50
+    vram_estimate_gb: 40
+    priority: P1
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 15
+
+  # --- Tier C: audio (small, may co-reside) --------------------------
+  - id: qwen3-tts
+    family: audio
+    role: premium-tts
+    tier: C
+    hf_repo: Qwen/Qwen3-TTS
+    revision: TBD-pin-at-install
+    runtime: audio
+    runtime_url: http://127.0.0.1:9001
+    weights_path: /data/models/audio/qwen3-tts
+    approx_size_gb: 10
+    vram_estimate_gb: 6
+    priority: P2
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 30
+
+  - id: voxcpm2
+    family: audio
+    role: premium-tts
+    tier: C
+    hf_repo: OpenBMB/VoxCPM2
+    revision: TBD-pin-at-install
+    runtime: audio
+    runtime_url: http://127.0.0.1:9001
+    weights_path: /data/models/audio/voxcpm2
+    approx_size_gb: 8
+    vram_estimate_gb: 5
+    priority: P2
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 30
+
+  - id: qwen3-asr
+    family: audio
+    role: premium-asr
+    tier: C
+    hf_repo: Qwen/Qwen3-ASR
+    revision: TBD-pin-at-install
+    runtime: audio
+    runtime_url: http://127.0.0.1:9001
+    weights_path: /data/models/audio/qwen3-asr
+    approx_size_gb: 8
+    vram_estimate_gb: 5
+    priority: P2
+    active: true
+    co_resident: true
+    eviction_idle_minutes: 30
+    notes: >-
+      Prefer keeping hot during interactive sessions (PLAN §4.3 Tier C).
+
+# --- Explicitly excluded set ----------------------------------------
+# Listed here so the gateway can return a clear error if a caller asks
+# for any of these. Matches PLAN.md §2.2 verbatim.
+excluded_models:
+  - gpt-oss-120b
+  - deepseek-v3.2-nvfp4
+  - flux.1
+  - flux.1-dev
+  - flux.1-kontext
+  - sdxl
+  - stable-diffusion-3.x
+  - whisper
+  - faster-whisper
+  - kokoro
+  - fish-speech
+  - cosyvoice
+  - "ollama:*"
