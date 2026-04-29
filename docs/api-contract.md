@@ -17,7 +17,8 @@ with `Authorization: Bearer <SPARKY_API_KEY>` (PLAN §5).
 
 ## Endpoint families
 
-- **Health & telemetry**: `/health`, `/ready`, `/metrics` (PLAN §5.1, §19).
+- **Health probes**: `/health`, `/ready` — unauthenticated (PLAN §5.1).
+- **Telemetry**: `GET /metrics` requires the same Bearer token as other gateway routes (Prometheus scrape uses `Authorization`); PLAN §19 metrics exposure — see OpenAPI for shape.
 - **Models**: `GET /v1/models` (PLAN §5.1 + co-residency state from §4.3).
 - **Premium text**: `POST /v1/chat/completions`,
   `POST /v1/reasoning/analyze`, `POST /v1/reasoning/compare` (PLAN §5.2).
@@ -38,13 +39,13 @@ The OpenAPI schemas encode guardrails so callers get stable HTTP **422**
 responses when a request is out of policy (GPU-heavy dimensions, excessive
 duration, unsafe URIs) rather than failing deep inside a worker:
 
-- **Chat**: `POST /v1/chat/completions` exposes optional `stream`, which must be
+- **Chat**: `POST /v1/chat/completions` validates bounded `max_tokens` before proxy and exposes optional `stream`, which must be
   **`false`** when present (JSON Schema `enum: [false]`). Sending `true`
   fails validation until SSE streaming exists. Other OpenAI-shaped optional keys
   remain allowed via `additionalProperties` where listed.
 - **Image / video jobs**: width, height, steps, duration, and fps carry
-  explicit min/max and alignment (`multipleOf`) bounds matching supported
-  ComfyUI workflows.
+  explicit min/max and alignment (`multipleOf`) bounds; video defaults cap
+  resolution and wall-clock duration to stay within the single ComfyUI slot budget.
 - **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` with a schema
   pattern that rejects `..` and `%2e%2e` / `%2E%2E`-style encoding (no regex inline
   flags—ECMA-262 / JS-safe); gateway still canonicalizes paths before opening files.

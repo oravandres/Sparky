@@ -3,15 +3,41 @@
 #
 # Usage:
 #   ./scripts/check-gpu.sh
+#   ./scripts/check-gpu.sh --host-only    # host nvidia-smi only (CI laptops without Docker GPU)
 #   SPARKY_CUDA_IMAGE=nvidia/cuda:12.6.3-runtime-ubuntu22.04 ./scripts/check-gpu.sh
 #
 # Override SPARKY_CUDA_IMAGE if the default multi-arch tag fails on DGX Spark;
 # follow NVIDIA guidance for ARM64 CUDA images when needed.
+#
+# Environment:
+#   SPARKY_GPU_CHECK_HOST_ONLY=1  Same as --host-only (explicit escape hatch).
 
 set -euo pipefail
 
 readonly ME="${0##*/}"
 CUDA_IMAGE="${SPARKY_CUDA_IMAGE:-nvidia/cuda:12.6.3-runtime-ubuntu22.04}"
+HOST_ONLY=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host-only)
+      HOST_ONLY=1
+      shift
+      ;;
+    -h | --help)
+      sed -n '1,18p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "${ME}: unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "${SPARKY_GPU_CHECK_HOST_ONLY:-}" ]] && [[ "${SPARKY_GPU_CHECK_HOST_ONLY}" != "0" ]]; then
+  HOST_ONLY=1
+fi
 
 echo "=== Sparky GPU check (${ME}) ==="
 
@@ -23,9 +49,14 @@ fi
 echo "--- Host nvidia-smi ---"
 nvidia-smi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "[warn] docker not found — skipping container CUDA probe (install Docker + NVIDIA Container Toolkit)." >&2
+if [[ "${HOST_ONLY}" -eq 1 ]]; then
+  echo "[warn] --host-only / SPARKY_GPU_CHECK_HOST_ONLY: skipping Docker GPU probe." >&2
   exit 0
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[fail] docker not found — install Docker + NVIDIA Container Toolkit, or run with --host-only if intentional." >&2
+  exit 1
 fi
 
 echo "--- Docker GPU probe (${CUDA_IMAGE}) ---"

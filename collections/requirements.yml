@@ -2,5 +2,6 @@
 # Ansible Galaxy collections — install before ansible-playbook / ansible-lint locally:
 #   ansible-galaxy collection install -r collections/requirements.yml
 collections:
+  # Exact pin — bump intentionally when upgrading Ansible collections (PR review).
   - name: community.general
-    version: ">=9.5.0"
+    version: "12.6.0"

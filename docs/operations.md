@@ -40,6 +40,8 @@ GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
 ./scripts/check-gpu.sh
 ```
 
+Use `./scripts/check-gpu.sh --host-only` (or `SPARKY_GPU_CHECK_HOST_ONLY=1`) only when Docker or the NVIDIA Container Toolkit is intentionally absent; a full appliance install should pass the container probe.
+
 ## Hardware & storage (Phase 0 — preflight, PLAN §9)
 
 Before installs, run the host script (reports hostname, aarch64, RAM, block devices,
@@ -57,6 +59,8 @@ SPARKY_DATA_MOUNT=/mnt/your-nvme ./scripts/preflight.sh
 SPARKY_PREFLIGHT_MIN_FREE_GB=600 ./scripts/preflight.sh   # default; lower only if documented
 ./scripts/preflight.sh --quick   # dev only: skips 600 GiB check and aarch64 requirement
 ```
+
+Full preflight (non-`--quick`) requires `SPARKY_DATA_MOUNT` to be a **mountpoint**, not only a directory on the root filesystem, so operators cannot confuse NVMe-backed storage with `/` free space.
 
 Recorded after Ansible Phase 1 lands (hostname IP DNS SSH etc.):
 

@@ -70,6 +70,18 @@
     - { path: /var/lib/sparky, owner: root, group: "{{ sparky_service_group }}", mode: "0755" }
     - { path: /var/lib/sparky/jobs, owner: "{{ sparky_service_user }}", group: "{{ sparky_service_group }}", mode: "0750" }
 
+- name: Require explicit CIDR confirmation before UFW runs
+  ansible.builtin.assert:
+    that:
+      - sparky_firewall_cidr_confirmed | bool
+    fail_msg: >-
+      sparky_firewall_cidr_confirmed must be true when sparky_configure_firewall is true.
+      Set sparky_admin_cidr, sparky_internal_cidr, and sparky_monitoring_cidr to your
+      site-specific networks first (see inventory/group_vars/sparky.yml.example).
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
 - name: Install UFW (firewall)
   ansible.builtin.apt:
     name: ufw

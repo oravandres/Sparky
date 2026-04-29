@@ -35,7 +35,8 @@ Authorization: Bearer <SPARKY_API_KEY>
 Endpoint families (full contract in
 [`config/api-contract.yaml`](config/api-contract.yaml)):
 
-- `GET /health`, `GET /ready`, `GET /metrics`, `GET /v1/models`.
+- `GET /health`, `GET /ready` (unauthenticated probes); `GET /metrics`,
+  `GET /v1/models` (Bearer token required — scrape Prometheus with `Authorization`).
 - `POST /v1/chat/completions` (OpenAI-compatible, served by Nemotron).
 - `POST /v1/reasoning/{analyze,compare}`.
 - `POST /v1/agentic-rag/{plan,evaluate-evidence,synthesize,verify,finalize}`.

@@ -22,9 +22,13 @@ sparky_ssh_harden: false
 sparky_ssh_password_authentication: true
 sparky_sshd_config_path: /etc/ssh/sshd_config.d/50-sparky.conf
 
-# Firewall (UFW on Debian/Ubuntu). Set false when another tool manages rules.
-sparky_configure_firewall: true
-# CIDRs for UFW rules (PLAN §10). Tighten to site specifics.
+# Firewall (UFW on Debian/Ubuntu). Default off until site CIDRs are confirmed —
+# enabling with placeholder RFC1918 ranges can lock SSH on remote installs.
+sparky_configure_firewall: false
+# Set true only after sparky_admin_cidr / sparky_internal_cidr /
+# sparky_monitoring_cidr are set to real networks for this site.
+sparky_firewall_cidr_confirmed: false
+# CIDRs for UFW rules (PLAN §10). Defaults are placeholders only.
 sparky_admin_cidr: 10.0.0.0/8
 sparky_internal_cidr: 10.0.0.0/8
 sparky_monitoring_cidr: 10.0.0.0/8

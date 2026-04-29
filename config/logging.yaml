@@ -27,13 +27,6 @@ handlers:
     filters: [redact]
     level: DEBUG
 
-  file:
-    class: logging.handlers.WatchedFileHandler
-    filename: /var/log/sparky/sparky-gateway/sparky-gateway.log
-    formatter: json
-    filters: [redact]
-    level: INFO
-
 root:
   level: INFO
   handlers: [stdout]

@@ -12,6 +12,9 @@ info:
     Auth: `Authorization: Bearer <SPARKY_API_KEY>`. The key is mirrored from
     MiMi-Secrets (sealed secret `sparky-api-key`) per PLAN §10.
 
+    Endpoints `/health` and `/ready` are unauthenticated for probes. All other routes,
+    including `GET /metrics`, require the API key — scrape Prometheus with Bearer auth.
+
     Request bodies are validated against this schema before enqueue or proxy;
     out-of-policy numeric bounds or unsafe URIs receive HTTP 422 with an error
     envelope (same shape as other gateway errors).
@@ -77,7 +80,6 @@ paths:
     get:
       tags: [metrics]
       summary: Prometheus metrics (text exposition)
-      security: []
       responses:
         "200":
           description: Metrics in Prometheus exposition format
@@ -516,6 +518,14 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Model" }
 
+    BoundedGenerationTokens:
+      type: integer
+      minimum: 1
+      maximum: 65536
+      description: >-
+        Gateway-enforced generation token ceiling before proxy to the text runtime (rejects
+        negative or oversized requests; adjust with explicit contract PR if the deployment budget changes).
+
     ChatCompletionRequest:
       type: object
       required: [model, messages]
@@ -530,7 +540,7 @@ components:
               role: { type: string, enum: [system, user, assistant, tool] }
               content: { type: string }
         temperature: { type: number }
-        max_tokens: { type: integer }
+        max_tokens: { $ref: "#/components/schemas/BoundedGenerationTokens" }
         stream:
           type: boolean
           enum: [false]
@@ -552,7 +562,11 @@ components:
           type: array
           items: { type: string }
         output_style: { type: string, enum: [structured, prose, bulleted] }
-        max_tokens: { type: integer, default: 2048 }
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 65536
+          default: 2048
 
     ReasoningAnalyzeResponse:
       type: object
@@ -735,7 +749,11 @@ components:
           type: string
           enum: [technical, executive, concise, detailed]
         require_citations: { type: boolean, default: true }
-        max_tokens: { type: integer, default: 4096 }
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 65536
+          default: 4096
 
     RagSynthesizeResponse:
       type: object
@@ -903,6 +921,10 @@ components:
     VideoJobRequest:
       type: object
       required: [model, prompt]
+      description: >-
+        Conservative limits cap wall-clock, resolution, and frame rate so a single job cannot
+        monopolize the shared ComfyUI slot (see PLAN media co-residency). Product needs for
+        longer or 4K runs require an explicit api-contract bump.
       properties:
         model:
           type: string
@@ -913,24 +935,24 @@ components:
         duration_seconds:
           type: integer
           minimum: 1
-          maximum: 120
+          maximum: 30
           default: 5
         width:
           type: integer
           minimum: 256
-          maximum: 3840
+          maximum: 1920
           multipleOf: 16
           default: 1280
         height:
           type: integer
           minimum: 256
-          maximum: 2160
+          maximum: 1080
           multipleOf: 16
           default: 720
         fps:
           type: integer
           minimum: 1
-          maximum: 60
+          maximum: 30
           default: 24
         seed:
           type: integer

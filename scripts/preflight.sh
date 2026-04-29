@@ -19,7 +19,7 @@ DATA_MOUNT="${SPARKY_DATA_MOUNT:-/data}"
 QUICK=0
 
 usage() {
-  sed -n '1,17p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '1,19p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -94,6 +94,24 @@ if [[ ! -d "$DATA_MOUNT" ]]; then
   fail "directory missing: ${DATA_MOUNT}. Create or set SPARKY_DATA_MOUNT."
 fi
 pass "mount path exists"
+
+if [[ "${QUICK}" -eq 0 ]]; then
+  if command -v mountpoint >/dev/null 2>&1; then
+    if ! mountpoint -q "$DATA_MOUNT"; then
+      fail "${DATA_MOUNT} is not a mountpoint — use the dedicated NVMe/data filesystem (PLAN §8). Try mountpoint -v \"${DATA_MOUNT}\"."
+    fi
+    pass "${DATA_MOUNT} is a mountpoint"
+  elif command -v findmnt >/dev/null 2>&1; then
+    if ! findmnt --target "$DATA_MOUNT" >/dev/null 2>&1; then
+      fail "${DATA_MOUNT} is not listed by findmnt — ensure it is mounted."
+    fi
+    pass "${DATA_MOUNT} is a mounted filesystem path"
+  else
+    fail "need mountpoint(1) or findmnt(1) to verify ${DATA_MOUNT} is mounted (install util-linux)."
+  fi
+else
+  warn "--quick: skipping mountpoint check"
+fi
 
 # df -P: POSIX portability; with -k on Linux/GNU: 1024-byte blocks (Avail column).
 avail_kb="$(df -Pk "$DATA_MOUNT" 2>/dev/null | awk 'NR==2 { print $4 }')"

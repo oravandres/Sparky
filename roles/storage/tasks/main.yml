@@ -13,6 +13,16 @@
       then create the mount before playbooks/20-storage.yml.
   when: not sparky_data_mount_stat.stat.exists | default(false)
 
+- name: Verify data path is a mount point (not only a directory on the OS disk)
+  ansible.builtin.command:
+    argv:
+      - mountpoint
+      - -q
+      - "{{ sparky_data_mount }}"
+  register: sparky_mountpoint_check
+  changed_when: false
+  failed_when: sparky_mountpoint_check.rc != 0
+
 - name: Create models tier directories
   ansible.builtin.file:
     path: "{{ sparky_data_mount }}/models/{{ item }}"
