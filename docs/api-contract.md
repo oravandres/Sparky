@@ -39,13 +39,15 @@ The OpenAPI schemas encode guardrails so callers get stable HTTP **422**
 responses when a request is out of policy (GPU-heavy dimensions, excessive
 duration, unsafe URIs) rather than failing deep inside a worker:
 
-- **Chat**: `POST /v1/chat/completions` validates bounded `max_tokens` before proxy and exposes optional `stream`, which must be
+- **Chat**: `POST /v1/chat/completions` validates bounded `max_tokens` (production ceiling **16384**
+  tokens per request unless the contract tier changes) before proxy and exposes optional `stream`, which must be
   **`false`** when present (JSON Schema `enum: [false]`). Sending `true`
   fails validation until SSE streaming exists. Other OpenAI-shaped optional keys
   remain allowed via `additionalProperties` where listed.
+- **Coding**: optional bounded `max_tokens` on coding review requests when callers supply it.
 - **Image / video jobs**: width, height, steps, duration, and fps carry
-  explicit min/max and alignment (`multipleOf`) bounds; video defaults cap
-  resolution and wall-clock duration to stay within the single ComfyUI slot budget.
+  explicit min/max and alignment (`multipleOf`) bounds. Video adds **`max_frames`** and **`max_pixel_frames`**
+  so jobs beyond the Phase 1 pixel/frame envelope fail validation before enqueue.
 - **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` with a schema
   pattern that rejects `..` and `%2e%2e` / `%2E%2E`-style encoding (no regex inline
   flags—ECMA-262 / JS-safe); gateway still canonicalizes paths before opening files.

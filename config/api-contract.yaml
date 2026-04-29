@@ -521,10 +521,11 @@ components:
     BoundedGenerationTokens:
       type: integer
       minimum: 1
-      maximum: 65536
+      maximum: 16384
       description: >-
-        Gateway-enforced generation token ceiling before proxy to the text runtime (rejects
-        negative or oversized requests; adjust with explicit contract PR if the deployment budget changes).
+        Default production ceiling per generation request before proxy to the always-hot text
+        runtime (DoS guard). Larger batches require an explicit api-contract / privileged-tier bump,
+        not an unbounded client integer.
 
     ChatCompletionRequest:
       type: object
@@ -565,7 +566,7 @@ components:
         max_tokens:
           type: integer
           minimum: 1
-          maximum: 65536
+          maximum: 16384
           default: 2048
 
     ReasoningAnalyzeResponse:
@@ -752,7 +753,7 @@ components:
         max_tokens:
           type: integer
           minimum: 1
-          maximum: 65536
+          maximum: 16384
           default: 4096
 
     RagSynthesizeResponse:
@@ -856,6 +857,7 @@ components:
               content: { type: string }
         diff: { type: string }
         instructions: { type: string }
+        max_tokens: { $ref: "#/components/schemas/BoundedGenerationTokens" }
 
     CodingReviewResponse:
       type: object
@@ -920,11 +922,11 @@ components:
 
     VideoJobRequest:
       type: object
-      required: [model, prompt]
+      required: [model, prompt, duration_seconds, fps, width, height, max_frames, max_pixel_frames]
       description: >-
-        Conservative limits cap wall-clock, resolution, and frame rate so a single job cannot
-        monopolize the shared ComfyUI slot (see PLAN media co-residency). Product needs for
-        longer or 4K runs require an explicit api-contract bump.
+        Phase 1 envelope keeps one media slot usable: tight duration/fps/resolution caps,
+        explicit max_frames (ceil(duration_seconds × fps)), and max_pixel_frames budget so
+        oversized jobs fail validation before enqueue. Relax via deliberate api-contract PRs only.
       properties:
         model:
           type: string
@@ -935,25 +937,39 @@ components:
         duration_seconds:
           type: integer
           minimum: 1
-          maximum: 30
+          maximum: 12
           default: 5
         width:
           type: integer
           minimum: 256
-          maximum: 1920
+          maximum: 1280
           multipleOf: 16
           default: 1280
         height:
           type: integer
           minimum: 256
-          maximum: 1080
+          maximum: 720
           multipleOf: 16
           default: 720
         fps:
           type: integer
           minimum: 1
-          maximum: 30
+          maximum: 24
           default: 24
+        max_frames:
+          type: integer
+          minimum: 1
+          maximum: 288
+          description: >-
+            ceil(duration_seconds × fps); Phase 1 hard ceiling 288 frames. Gateway rejects when this
+            disagrees with duration/fps or exceeds budget.
+        max_pixel_frames:
+          type: integer
+          minimum: 1
+          maximum: 265420800
+          description: >-
+            ceil(duration_seconds × fps) × width × height — total pixel-frames budget (≤288 frames at 1280×720).
+            Gateway rejects enqueue when mismatched with other fields or above ceiling.
         seed:
           type: integer
           minimum: 0
