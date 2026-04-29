@@ -531,10 +531,16 @@ components:
               content: { type: string }
         temperature: { type: number }
         max_tokens: { type: integer }
+        stream:
+          type: boolean
+          enum: [false]
+          description: >
+            SSE streaming is not implemented yet; only false may be sent if the
+            field is present. Omit this field for non-streaming OpenAI clients.
       additionalProperties: true
       description: >
-        Streaming (`stream: true`) is intentionally omitted until the gateway
-        implements SSE `text/event-stream` chunks compatible with OpenAI clients.
+        OpenAI-compatible non-streaming chat. Clients must not send stream=true
+        until the gateway implements SSE `text/event-stream` chunks.
 
     ReasoningAnalyzeRequest:
       type: object
@@ -961,11 +967,12 @@ components:
         input_uri:
           type: string
           maxLength: 4096
-          pattern: '^file:///data/(outputs|models)/[\w./-]+$'
+          pattern: '^file:///data/(outputs|models)/(?!.*(\.\.|(?i)%2e%2e))[\w./-]+$'
           description: >
-            Local Sparky paths only (`file:///data/outputs/…` or
-            `file:///data/models/…`). HTTP(S), link-local, and other schemes are
-            rejected at validation time to prevent SSRF against internal services.
+            Local Sparky paths only under `/data/outputs/` or `/data/models/`.
+            Rejects `..`, URL-encoded traversal (`%2e%2e`), `http(s)://`, and other
+            schemes at validation time (SSRF / path escape). Gateway must still
+            resolve and canonicalize before open (PLAN §17).
         language:
           type: string
           enum: [auto, en, et]

@@ -38,14 +38,16 @@ The OpenAPI schemas encode guardrails so callers get stable HTTP **422**
 responses when a request is out of policy (GPU-heavy dimensions, excessive
 duration, unsafe URIs) rather than failing deep inside a worker:
 
-- **Chat**: `POST /v1/chat/completions` does **not** expose `stream: true` until
-  the gateway implements SSE `text/event-stream` compatible with OpenAI
-  streaming clients.
+- **Chat**: `POST /v1/chat/completions` exposes optional `stream`, which must be
+  **`false`** when present (JSON Schema `enum: [false]`). Sending `true`
+  fails validation until SSE streaming exists. Other OpenAI-shaped optional keys
+  remain allowed via `additionalProperties` where listed.
 - **Image / video jobs**: width, height, steps, duration, and fps carry
   explicit min/max and alignment (`multipleOf`) bounds matching supported
   ComfyUI workflows.
-- **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` only —
-  no arbitrary `http(s)://` or other schemes (SSRF prevention).
+- **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` with a
+  pattern that rejects `..` and `%2e%2e` traversal; gateway still canonicalizes
+  paths before opening files.
 
 ## Drift policy
 

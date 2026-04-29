@@ -16,9 +16,11 @@ class RedactSecretsFilter(logging.Filter):
     """Strip obvious secret material from log records before emission."""
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 — logging.Filter API
-        msg = record.msg
-        if isinstance(msg, str):
-            msg = _BEARER.sub(r"\1[REDACTED]", msg)
-            msg = _INLINE_SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", msg)
-            record.msg = msg
+        # Expand %-formatting first so secrets smuggled only in record.args are visible,
+        # then replace whole message and clear args so formatters cannot re-expand secrets.
+        text = record.getMessage()
+        redacted = _BEARER.sub(r"\1[REDACTED]", text)
+        redacted = _INLINE_SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", redacted)
+        record.msg = redacted
+        record.args = ()
         return True
