@@ -1,0 +1,27 @@
+# gitleaks config — see PLAN.md §10, §22
+# Allow only well-known example placeholders in committed *.example templates.
+# Broad path-only allowlists hide findings (docs/*.md, README) — use AND so both
+# path and placeholder regex must match.
+
+title = "Sparky gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented empty or fake placeholders in committed *.example templates only"
+condition = "AND"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)config/sparky\.env\.example$''',
+  '''(^|/)inventory/group_vars/[^/]+\.example$''',
+]
+regexes = [
+  '''SPARKY_API_KEY=\s*$''',
+  '''SPARKY_API_KEY=changeme.*''',
+  '''SPARKY_API_KEY=<.*>''',
+  '''HF_TOKEN=\s*$''',
+  '''HF_TOKEN=hf_xxx.*''',
+  '''NGC_API_KEY=\s*$''',
+  '''NGC_API_KEY=nvapi-xxx.*''',
+]

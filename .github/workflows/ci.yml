@@ -1,0 +1,143 @@
+---
+# Sparky CI — see PLAN.md §22
+# Runs on PRs and pushes to main. All jobs must be green for merge.
+# Actions are pinned to immutable commit SHAs (tags noted in comments).
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Run pre-commit
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install "yamllint==1.35.1"
+      - run: yamllint -c .yamllint .
+
+  ansible-lint:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install "ansible-core>=2.17,<2.19" "ansible-lint==24.12.2"
+      - run: ansible-lint
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Run shellcheck
+        run: |
+          set -euo pipefail
+          # Only run if shell scripts exist; otherwise skip cleanly.
+          mapfile -t scripts < <(find scripts -type f -name '*.sh' 2>/dev/null || true)
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "No shell scripts yet; skipping."
+            exit 0
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -x "${scripts[@]}"
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: DavidAnson/markdownlint-cli2-action@db43aef879112c3119a410d69f66701e0d530809 # v17
+        with:
+          globs: "**/*.md"
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  python:
+    name: python (ruff + mypy + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Detect Python services
+        id: detect
+        run: |
+          set -euo pipefail
+          if compgen -G "services/*/pyproject.toml" > /dev/null; then
+            echo "have_services=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_services=false" >> "$GITHUB_OUTPUT"
+            echo "No Python services yet; skipping."
+          fi
+      - name: Install ruff/mypy/pytest
+        if: steps.detect.outputs.have_services == 'true'
+        run: pip install "ruff==0.7.4" "mypy==1.13.0" "pytest==8.3.3" "pytest-asyncio==0.24.0" "httpx==0.27.2"
+      - name: ruff check
+        if: steps.detect.outputs.have_services == 'true'
+        run: ruff check services
+      - name: ruff format --check
+        if: steps.detect.outputs.have_services == 'true'
+        run: ruff format --check services
+      - name: Install services (editable)
+        if: steps.detect.outputs.have_services == 'true'
+        run: |
+          for d in services/*/; do
+            if [ -f "$d/pyproject.toml" ]; then
+              pip install -e "$d"
+            fi
+          done
+      - name: mypy
+        if: steps.detect.outputs.have_services == 'true'
+        run: |
+          for d in services/*/; do
+            if [ -f "$d/pyproject.toml" ]; then
+              (cd "$d" && mypy src)
+            fi
+          done
+      - name: pytest
+        if: steps.detect.outputs.have_services == 'true'
+        run: |
+          for d in services/*/; do
+            if [ -f "$d/pyproject.toml" ] && [ -d "$d/tests" ]; then
+              (cd "$d" && pytest -q)
+            fi
+          done

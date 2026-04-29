@@ -1,0 +1,37 @@
+---
+# Example for inventory/group_vars/sparky.yml — see PLAN.md §10.
+#
+# The real file MUST be encrypted with `ansible-vault` and is gitignored.
+# Vault password file lives in ~/.ansible-vault-pass on the operator workstation,
+# never in this repo.
+#
+# Encrypt with:
+#   ansible-vault encrypt inventory/group_vars/sparky.yml
+# Edit with:
+#   ansible-vault edit inventory/group_vars/sparky.yml
+
+# --- Sparky host identity ---
+sparky_hostname: sparky.mimi.local
+sparky_lan_ip: 10.0.0.50              # change to actual LAN IP
+sparky_admin_user: andres
+
+# --- Storage mount discovered in preflight (PLAN.md §8) ---
+sparky_data_mount: /data
+
+# --- Secrets (placeholders only; real values via ansible-vault) ---
+hf_token: ""                          # Hugging Face token for gated weights
+ngc_api_key: ""                       # NVIDIA NGC API key
+
+# SPARKY_API_KEY is NOT defined here. It is generated once with
+# `openssl rand -hex 32`, registered as the sealed secret `sparky-api-key`
+# in MiMi-Secrets, and mirrored to /etc/sparky/sparky.env on the host
+# (mode 0640, root:sparky). See PLAN.md §10.
+
+# --- Optional K3s join controls (PLAN.md §2.1) ---
+sparky_join_k3s: false
+sparky_node_labels:
+  - "node-role.mimi.local/sparky=true"
+  - "hardware.nvidia.com/dgx-spark=true"
+  - "workload.mimi.local/premium-ai=true"
+sparky_node_taints:
+  - "workload.mimi.local/premium-ai=true:NoSchedule"

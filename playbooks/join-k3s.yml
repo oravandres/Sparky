@@ -1,23 +1,23 @@
 ---
 - name: Prepare Sparky for K3s
   hosts: sparky
-  gather_facts: yes
-  become: yes
+  gather_facts: true
+  become: true
   tasks:
     - name: Ensure k3s group exists
-      group:
+      ansible.builtin.group:
         name: k3s
         state: present
 
     - name: Ensure k3s user exists
-      user:
+      ansible.builtin.user:
         name: k3s
         group: k3s
         state: present
 
     # Replicate necessary variables from MiMi
     - name: Set K3s variables
-      set_fact:
+      ansible.builtin.set_fact:
         k3s_version: "v1.29.0+k3s1"
         k3s_api_port: 6443
         k3s_agent_args: []
@@ -28,36 +28,41 @@
         k3s_binary_path: /usr/local/bin/k3s
         k3s_agent_ready_timeout: 300
 
-    # DGX Spark is ARM64 (aarch64) — use the arm64 binary
+    # DGX Spark is ARM64 (aarch64) — use the arm64 binary.
+    # Pin checksum from https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/sha256sum-arm64.txt
     - name: Download K3s binary (arm64)
-      get_url:
+      ansible.builtin.get_url:
         url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s-arm64"
         dest: /usr/local/bin/k3s
-        mode: '0755'
+        mode: "0755"
+        checksum: sha256:91dc2548be9da58184dd437e1c9e7a15d31c6ccfc7439e3d4a5a7802dd56e1f3
 
-    - name: Download K3s install script
-      get_url:
-        url: https://get.k3s.io
-        dest: /tmp/k3s-install-script.sh
-        mode: '0755'
+    # Vendored script — see playbooks/files/README.md (avoids mutable get.k3s.io at runtime).
+    - name: Install K3s install script (vendored get.k3s.io)
+      ansible.builtin.copy:
+        src: k3s-install-get-k3s-io.sh
+        dest: "{{ k3s_install_script_path }}"
+        mode: "0755"
+        # ansible.builtin.copy checksum is SHA1 of src (not sha256:… — see module docs).
+        checksum: dc3ac628d2881f0a1d7e0d495e991287c110d7ad
 
 - name: Get K3s token from master
   hosts: servers
-  gather_facts: no
-  become: yes
+  gather_facts: false
+  become: true
   tasks:
     - name: Read K3s token
-      slurp:
+      ansible.builtin.slurp:
         src: /var/lib/k3s/server/node-token
       register: k3s_token_slurp
 
     - name: Set token fact on server
-      set_fact:
+      ansible.builtin.set_fact:
         k3s_cluster_token: "{{ k3s_token_slurp.content | b64decode | trim }}"
 
 - name: Deploy K3s Agent
   hosts: sparky
-  become: yes
+  become: true
   vars:
     k3s_api_server: "pi-c1"
   roles:
