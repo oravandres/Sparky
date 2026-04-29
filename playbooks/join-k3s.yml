@@ -43,7 +43,8 @@
         src: k3s-install-get-k3s-io.sh
         dest: "{{ k3s_install_script_path }}"
         mode: "0755"
-        checksum: sha256:46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad
+        # ansible.builtin.copy checksum is SHA1 of src (not sha256:… — see module docs).
+        checksum: dc3ac628d2881f0a1d7e0d495e991287c110d7ad
 
 - name: Get K3s token from master
   hosts: servers
