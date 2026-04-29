@@ -1,0 +1,8 @@
+---
+# Phase 1 — base OS, service user, firewall, layout under /opt and /var (PLAN §10, §8).
+- name: Sparky Phase 1 — base OS
+  hosts: sparky
+  gather_facts: true
+  become: true
+  roles:
+    - role: base

@@ -1,0 +1,1042 @@
+openapi: 3.1.0
+info:
+  title: Sparky Gateway API
+  version: 0.1.0
+  description: |
+    Authenticated internal API surface for Sparky (DGX Spark main intelligence
+    machine). All external consumers (Maestro, AI Router, MaestroUI, DarkBase
+    services, future media/coding agents) call this gateway, not raw runtime
+    ports. See PLAN.md §5 for the full contract and §4.1 for the service
+    topology.
+
+    Auth: `Authorization: Bearer <SPARKY_API_KEY>`. The key is mirrored from
+    MiMi-Secrets (sealed secret `sparky-api-key`) per PLAN §10.
+
+    Endpoints `/health` and `/ready` are unauthenticated for probes. All other routes,
+    including `GET /metrics`, require the API key — scrape Prometheus with Bearer auth.
+
+    Request bodies are validated against this schema before enqueue or proxy;
+    out-of-policy numeric bounds or unsafe URIs receive HTTP 422 with an error
+    envelope (same shape as other gateway errors).
+  contact:
+    name: Sparky maintainers
+    url: https://github.com/oravandres/Sparky
+  license:
+    name: MIT
+
+servers:
+  - url: http://sparky.mimi.local:8080
+    description: Internal LAN gateway
+
+security:
+  - sparkyApiKey: []
+
+tags:
+  - name: health
+  - name: models
+  - name: text
+  - name: reasoning
+  - name: agentic-rag
+  - name: coding
+  - name: media
+  - name: audio
+  - name: jobs
+  - name: metrics
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness probe (dependency status)
+      security: []
+      responses:
+        "200":
+          description: Dependencies ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ready"
+        "503":
+          description: One or more dependencies are not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ready"
+
+  /metrics:
+    get:
+      tags: [metrics]
+      summary: Prometheus metrics (text exposition)
+      responses:
+        "200":
+          description: Metrics in Prometheus exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /v1/models:
+    get:
+      tags: [models]
+      summary: List active models with co-residency state
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+
+  /v1/chat/completions:
+    post:
+      tags: [text]
+      summary: OpenAI-compatible chat completions (proxied to Nemotron)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Completion response (OpenAI-compatible shape)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/reasoning/analyze:
+    post:
+      tags: [reasoning]
+      summary: Single-input deep analysis (PLAN §5.2.1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasoningAnalyzeRequest"
+      responses:
+        "200":
+          description: Structured analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReasoningAnalyzeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/reasoning/compare:
+    post:
+      tags: [reasoning]
+      summary: Side-by-side option comparison (PLAN §5.2.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasoningCompareRequest"
+      responses:
+        "200":
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReasoningCompareResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/agentic-rag/plan:
+    post:
+      tags: [agentic-rag]
+      summary: Generate retrieval plan (PLAN §6.3 / §6.4)
+      requestBody: { $ref: "#/components/requestBodies/RagPlanRequest" }
+      responses:
+        "200":
+          description: Retrieval plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagPlanResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/agentic-rag/evaluate-evidence:
+    post:
+      tags: [agentic-rag]
+      summary: Evaluate retrieved evidence (PLAN §6.5 / §6.6)
+      requestBody: { $ref: "#/components/requestBodies/RagEvaluateRequest" }
+      responses:
+        "200":
+          description: Evidence evaluation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagEvaluateResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/agentic-rag/synthesize:
+    post:
+      tags: [agentic-rag]
+      summary: Synthesize citation-aware answer (PLAN §6.7 / §6.8)
+      requestBody: { $ref: "#/components/requestBodies/RagSynthesizeRequest" }
+      responses:
+        "200":
+          description: Synthesized answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagSynthesizeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/agentic-rag/verify:
+    post:
+      tags: [agentic-rag]
+      summary: Verify answer claims against evidence (PLAN §6.9 / §6.10)
+      requestBody: { $ref: "#/components/requestBodies/RagVerifyRequest" }
+      responses:
+        "200":
+          description: Verification report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagVerifyResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/agentic-rag/finalize:
+    post:
+      tags: [agentic-rag]
+      summary: Produce final user-facing answer (PLAN §6.11)
+      requestBody: { $ref: "#/components/requestBodies/RagFinalizeRequest" }
+      responses:
+        "200":
+          description: Final answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagFinalizeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/coding/review:
+    post:
+      tags: [coding]
+      summary: Deep code review (PLAN §15)
+      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      responses:
+        "200":
+          description: Structured review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodingReviewResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/coding/architecture:
+    post:
+      tags: [coding]
+      summary: Architecture review
+      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      responses:
+        "200":
+          description: Structured review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodingReviewResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/coding/refactor-plan:
+    post:
+      tags: [coding]
+      summary: Refactor plan
+      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      responses:
+        "200":
+          description: Structured plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodingReviewResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/coding/security-review:
+    post:
+      tags: [coding]
+      summary: Security review
+      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      responses:
+        "200":
+          description: Structured review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodingReviewResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/media/image/jobs:
+    post:
+      tags: [media]
+      summary: Submit image generation job (PLAN §16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/media/video/jobs:
+    post:
+      tags: [media]
+      summary: Submit video generation job (PLAN §16)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/audio/tts/jobs:
+    post:
+      tags: [audio]
+      summary: Submit TTS job (PLAN §17)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TtsJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/audio/asr/jobs:
+    post:
+      tags: [audio]
+      summary: Submit ASR job (PLAN §17)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AsrJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+
+  /v1/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      summary: Get job record (PLAN §18)
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Job record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/jobs/{job_id}/cancel:
+    post:
+      tags: [jobs]
+      summary: Cancel a running job (PLAN §18)
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Job cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    sparkyApiKey:
+      type: http
+      scheme: bearer
+      description: SPARKY_API_KEY (mirrored from MiMi-Secrets, see PLAN §10)
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: Underlying runtime is unavailable (model loading, evicting, etc.)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: Request failed schema or policy validation (bounds, URI allowlist, etc.)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  requestBodies:
+    RagPlanRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RagPlanRequest" }
+    RagEvaluateRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RagEvaluateRequest" }
+    RagSynthesizeRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RagSynthesizeRequest" }
+    RagVerifyRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RagVerifyRequest" }
+    RagFinalizeRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RagFinalizeRequest" }
+    CodingReviewRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingReviewRequest" }
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string }
+
+    Ready:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status: { type: string, enum: [ready, degraded, not_ready] }
+        dependencies:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status: { type: string, enum: [ready, not_ready, unknown] }
+              detail: { type: string }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+
+    Model:
+      type: object
+      required: [id, family, role, runtime, state, active]
+      properties:
+        id: { type: string }
+        family: { type: string, enum: [text, image, video, audio] }
+        role: { type: string }
+        tier: { type: string, enum: [A, B, C] }
+        runtime: { type: string, enum: [vllm, trtllm, comfyui, audio] }
+        revision: { type: string }
+        priority: { type: string, enum: [P0, P1, P2] }
+        active: { type: boolean }
+        state: { type: string, enum: [hot, cold, loading, evicting] }
+
+    ModelList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Model" }
+
+    BoundedGenerationTokens:
+      type: integer
+      minimum: 1
+      maximum: 16384
+      description: >-
+        Default production ceiling per generation request before proxy to the always-hot text
+        runtime (DoS guard). Larger batches require an explicit api-contract / privileged-tier bump,
+        not an unbounded client integer.
+
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model: { type: string }
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [system, user, assistant, tool] }
+              content: { type: string }
+        temperature: { type: number }
+        max_tokens: { $ref: "#/components/schemas/BoundedGenerationTokens" }
+        stream:
+          type: boolean
+          enum: [false]
+          description: >
+            SSE streaming is not implemented yet; only false may be sent if the
+            field is present. Omit this field for non-streaming OpenAI clients.
+      additionalProperties: true
+      description: >
+        OpenAI-compatible non-streaming chat. Clients must not send stream=true
+        until the gateway implements SSE `text/event-stream` chunks.
+
+    ReasoningAnalyzeRequest:
+      type: object
+      required: [task]
+      properties:
+        task: { type: string }
+        context: { type: string }
+        criteria:
+          type: array
+          items: { type: string }
+        output_style: { type: string, enum: [structured, prose, bulleted] }
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 16384
+          default: 2048
+
+    ReasoningAnalyzeResponse:
+      type: object
+      required: [summary, key_points, risks, assumptions, recommendation, confidence]
+      properties:
+        summary: { type: string }
+        key_points: { type: array, items: { type: string } }
+        risks: { type: array, items: { type: string } }
+        assumptions: { type: array, items: { type: string } }
+        recommendation: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+
+    ReasoningCompareRequest:
+      type: object
+      required: [question, options, criteria]
+      properties:
+        question: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+        criteria:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              weight: { type: number, default: 1.0 }
+        constraints:
+          type: array
+          items: { type: string }
+
+    ReasoningCompareResponse:
+      type: object
+      required: [scores, totals, recommendation, confidence]
+      properties:
+        scores:
+          type: array
+          items:
+            type: object
+            required: [option_id, criterion_id, score, rationale]
+            properties:
+              option_id: { type: string }
+              criterion_id: { type: string }
+              score: { type: number }
+              rationale: { type: string }
+        totals:
+          type: array
+          items:
+            type: object
+            required: [option_id, weighted_total]
+            properties:
+              option_id: { type: string }
+              weighted_total: { type: number }
+        recommendation:
+          type: object
+          required: [option_id, reasoning]
+          properties:
+            option_id: { type: string }
+            reasoning: { type: string }
+            caveats:
+              type: array
+              items: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+
+    EvidenceChunk:
+      type: object
+      required: [chunk_id, source_id, text]
+      properties:
+        chunk_id: { type: string }
+        source_id: { type: string }
+        title: { type: string }
+        text: { type: string }
+        metadata: { type: object, additionalProperties: true }
+
+    RagPlanRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string }
+        user_intent:
+          type: string
+          enum: [unknown, question, analysis, coding, research, summary]
+        available_sources:
+          type: array
+          items:
+            type: object
+            required: [source_id, source_type]
+            properties:
+              source_id: { type: string }
+              source_type:
+                type: string
+                enum: [docs, code, pdf, audio, video, web, database]
+              description: { type: string }
+              metadata: { type: object, additionalProperties: true }
+        constraints:
+          type: object
+          properties:
+            require_citations: { type: boolean, default: true }
+            max_retrieval_rounds: { type: integer, default: 3 }
+            answer_style:
+              type: string
+              enum: [technical, executive, concise, detailed]
+
+    RagPlanResponse:
+      type: object
+      required: [intent, needs_rag, retrieval_rounds]
+      properties:
+        intent: { type: string }
+        needs_rag: { type: boolean }
+        required_facts:
+          type: array
+          items: { type: string }
+        retrieval_rounds:
+          type: array
+          items:
+            type: object
+            required: [round, queries, tools]
+            properties:
+              round: { type: integer }
+              queries: { type: array, items: { type: string } }
+              tools:
+                type: array
+                items:
+                  type: string
+                  enum: [vector_search, keyword_search, metadata_search, code_search]
+              filters: { type: object, additionalProperties: true }
+              top_k: { type: integer, default: 30 }
+              minimum_evidence: { type: string }
+        reasoning_notes: { type: string }
+
+    RagEvaluateRequest:
+      type: object
+      required: [question, evidence_chunks]
+      properties:
+        question: { type: string }
+        evidence_chunks:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceChunk" }
+        required_facts:
+          type: array
+          items: { type: string }
+
+    RagEvaluateResponse:
+      type: object
+      required: [sufficient, confidence]
+      properties:
+        sufficient: { type: boolean }
+        missing_facts: { type: array, items: { type: string } }
+        contradictions:
+          type: array
+          items:
+            type: object
+            properties:
+              summary: { type: string }
+              chunk_ids:
+                type: array
+                items: { type: string }
+        recommended_followup_queries:
+          type: array
+          items: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+
+    RagSynthesizeRequest:
+      type: object
+      required: [question, evidence_chunks]
+      properties:
+        question: { type: string }
+        evidence_chunks:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceChunk" }
+        answer_style:
+          type: string
+          enum: [technical, executive, concise, detailed]
+        require_citations: { type: boolean, default: true }
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 16384
+          default: 4096
+
+    RagSynthesizeResponse:
+      type: object
+      required: [answer, citations, confidence, needs_more_retrieval]
+      properties:
+        answer: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            required: [source_id, chunk_id, claim]
+            properties:
+              source_id: { type: string }
+              chunk_id: { type: string }
+              claim: { type: string }
+        unsupported_claims:
+          type: array
+          items: { type: string }
+        confidence: { type: string, enum: [high, medium, low] }
+        needs_more_retrieval: { type: boolean }
+
+    RagVerifyRequest:
+      type: object
+      required: [answer, evidence_chunks]
+      properties:
+        answer: { type: string }
+        evidence_chunks:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceChunk" }
+
+    RagVerifyResponse:
+      type: object
+      required: [supported_claims, unsupported_claims, confidence, final_answer_ready]
+      properties:
+        supported_claims: { type: array, items: { type: string } }
+        unsupported_claims: { type: array, items: { type: string } }
+        contradictions: { type: array, items: { type: string } }
+        confidence: { type: string, enum: [high, medium, low] }
+        final_answer_ready: { type: boolean }
+
+    RagFinalizeRequest:
+      type: object
+      required: [question, draft_answer, evidence_chunks]
+      properties:
+        question: { type: string }
+        draft_answer: { type: string }
+        evidence_chunks:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceChunk" }
+        verification:
+          type: object
+          properties:
+            supported_claims: { type: array, items: { type: string } }
+            unsupported_claims: { type: array, items: { type: string } }
+            contradictions: { type: array, items: { type: string } }
+        format: { type: string, enum: [markdown, plaintext, json] }
+        citation_style: { type: string, enum: [inline, footnote, none] }
+        answer_style:
+          type: string
+          enum: [technical, executive, concise, detailed]
+
+    RagFinalizeResponse:
+      type: object
+      required: [final_answer, citations, confidence, ready_for_user]
+      properties:
+        final_answer: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            required: [marker, source_id, chunk_id, claim]
+            properties:
+              marker: { type: string }
+              source_id: { type: string }
+              chunk_id: { type: string }
+              claim: { type: string }
+        removed_unsupported_claims: { type: array, items: { type: string } }
+        flagged_contradictions: { type: array, items: { type: string } }
+        confidence: { type: string, enum: [high, medium, low] }
+        ready_for_user: { type: boolean }
+
+    CodingReviewRequest:
+      type: object
+      required: [task]
+      properties:
+        task:
+          type: string
+          enum: [review, architecture, debug, refactor-plan, security-review]
+        repository: { type: string }
+        language:
+          type: string
+          enum: [go, typescript, python, yaml, mixed]
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, content]
+            properties:
+              path: { type: string }
+              content: { type: string }
+        diff: { type: string }
+        instructions: { type: string }
+        max_tokens: { $ref: "#/components/schemas/BoundedGenerationTokens" }
+
+    CodingReviewResponse:
+      type: object
+      required: [summary, findings, final_recommendation]
+      properties:
+        summary: { type: string }
+        findings:
+          type: array
+          items:
+            type: object
+            required: [severity, title, explanation, recommendation]
+            properties:
+              severity:
+                type: string
+                enum: [critical, high, medium, low, nit]
+              path: { type: string }
+              line: { type: integer }
+              title: { type: string }
+              explanation: { type: string }
+              recommendation: { type: string }
+        architecture_notes: { type: array, items: { type: string } }
+        tests_to_add: { type: array, items: { type: string } }
+        final_recommendation:
+          type: string
+          enum: [approve, request_changes, needs_human_review]
+
+    ImageJobRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          enum: [flux2-dev, flux2-klein, qwen-image, hunyuanimage-3-instruct]
+        prompt:
+          type: string
+          maxLength: 32000
+        negative_prompt:
+          type: string
+          maxLength: 32000
+        width:
+          type: integer
+          minimum: 256
+          maximum: 4096
+          multipleOf: 64
+          default: 1024
+        height:
+          type: integer
+          minimum: 256
+          maximum: 4096
+          multipleOf: 64
+          default: 1024
+        steps:
+          type: integer
+          minimum: 1
+          maximum: 150
+          default: 30
+        seed:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        metadata: { type: object, additionalProperties: true }
+
+    VideoJobRequest:
+      type: object
+      required: [model, prompt, duration_seconds, fps, width, height, max_frames, max_pixel_frames]
+      description: >-
+        Phase 1 envelope keeps one media slot usable: tight duration/fps/resolution caps,
+        explicit max_frames (ceil(duration_seconds × fps)), and max_pixel_frames budget so
+        oversized jobs fail validation before enqueue. Relax via deliberate api-contract PRs only.
+      properties:
+        model:
+          type: string
+          enum: [ltx-2, wan-2.2, hunyuanvideo-1.5]
+        prompt:
+          type: string
+          maxLength: 32000
+        duration_seconds:
+          type: integer
+          minimum: 1
+          maximum: 12
+          default: 5
+        width:
+          type: integer
+          minimum: 256
+          maximum: 1280
+          multipleOf: 16
+          default: 1280
+        height:
+          type: integer
+          minimum: 256
+          maximum: 720
+          multipleOf: 16
+          default: 720
+        fps:
+          type: integer
+          minimum: 1
+          maximum: 24
+          default: 24
+        max_frames:
+          type: integer
+          minimum: 1
+          maximum: 288
+          description: >-
+            ceil(duration_seconds × fps); Phase 1 hard ceiling 288 frames. Gateway rejects when this
+            disagrees with duration/fps or exceeds budget.
+        max_pixel_frames:
+          type: integer
+          minimum: 1
+          maximum: 265420800
+          description: >-
+            ceil(duration_seconds × fps) × width × height — total pixel-frames budget (≤288 frames at 1280×720).
+            Gateway rejects enqueue when mismatched with other fields or above ceiling.
+        seed:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        metadata: { type: object, additionalProperties: true }
+
+    TtsJobRequest:
+      type: object
+      required: [model, text]
+      properties:
+        model:
+          type: string
+          enum: [qwen3-tts, voxcpm2]
+        text:
+          type: string
+          maxLength: 50000
+        language:
+          type: string
+          enum: [en, et, multi]
+        voice: { type: string, default: default }
+        style:
+          type: string
+          enum: [calm, professional, energetic, narration]
+        metadata: { type: object, additionalProperties: true }
+
+    AsrJobRequest:
+      type: object
+      required: [model, input_uri]
+      properties:
+        model:
+          type: string
+          enum: [qwen3-asr]
+        input_uri:
+          type: string
+          maxLength: 4096
+          pattern: '^file:///data/(outputs|models)/(?!.*(\.\.|%2[eE]%2[eE]))[\w./-]+$'
+          description: >
+            Local Sparky paths only under `/data/outputs/` or `/data/models/`.
+            Rejects `..` and literal `%2e%2e` / `%2E%2E`-style URL-encoded traversal
+            without regex inline flags (OpenAPI 3.1 patterns use ECMA-262; avoids
+            `(?i)` for JS validators and codegen). Gateway must still canonicalize
+            paths before open (PLAN §17).
+        language:
+          type: string
+          enum: [auto, en, et]
+        metadata: { type: object, additionalProperties: true }
+
+    JobAccepted:
+      type: object
+      required: [job_id, type, status]
+      properties:
+        job_id: { type: string, format: uuid }
+        type: { type: string, enum: [image, video, tts, asr] }
+        status: { type: string, enum: [queued] }
+
+    Job:
+      type: object
+      required: [job_id, type, model, status, created_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        type: { type: string, enum: [image, video, tts, asr] }
+        model: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled]
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        output_uri: { type: string }
+        error: { type: string }

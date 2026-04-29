@@ -1,0 +1,6 @@
+---
+# Data volume layout — PLAN §8. Paths live under sparky_data_mount (pre-created or mounted).
+
+sparky_service_group: sparky
+sparky_service_user: sparky
+sparky_data_mount: /data

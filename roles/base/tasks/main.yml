@@ -1,0 +1,166 @@
+---
+# Base OS tasks — PLAN §10 Phase 1.
+
+- name: Set hostname (short name)
+  ansible.builtin.hostname:
+    name: "{{ sparky_hostname_short }}"
+  when: ansible_hostname != sparky_hostname_short
+
+- name: Configure timezone
+  community.general.timezone:
+    name: "{{ sparky_timezone }}"
+
+- name: Refresh apt cache
+  ansible.builtin.apt:
+    update_cache: "{{ sparky_apt_update_cache | bool }}"
+    cache_valid_time: "{{ sparky_apt_cache_valid_seconds | int }}"
+  when: ansible_os_family == "Debian"
+
+- name: Upgrade apt packages (optional)
+  ansible.builtin.apt:
+    upgrade: dist
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_apt_upgrade | bool
+
+- name: Ensure service group exists
+  ansible.builtin.group:
+    name: "{{ sparky_service_group }}"
+    state: present
+
+- name: Ensure service user exists
+  ansible.builtin.user:
+    name: "{{ sparky_service_user }}"
+    group: "{{ sparky_service_group }}"
+    groups: "{{ sparky_service_user_extra_groups }}"
+    append: true
+    shell: /bin/bash
+    home: "/home/{{ sparky_service_user }}"
+    create_home: true
+
+- name: Create /etc/sparky for env file (PLAN §10)
+  ansible.builtin.file:
+    path: /etc/sparky
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0750"
+
+- name: Create /opt/sparky layout (PLAN §8)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0755"
+  loop:
+    - /opt/sparky
+    - /opt/sparky/config
+    - /opt/sparky/services
+
+- name: Create log and state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/log/sparky, owner: root, group: "{{ sparky_service_group }}", mode: "0755" }
+    - { path: /var/lib/sparky, owner: root, group: "{{ sparky_service_group }}", mode: "0755" }
+    - { path: /var/lib/sparky/jobs, owner: "{{ sparky_service_user }}", group: "{{ sparky_service_group }}", mode: "0750" }
+
+- name: Require explicit CIDR confirmation before UFW runs
+  ansible.builtin.assert:
+    that:
+      - sparky_firewall_cidr_confirmed | bool
+    fail_msg: >-
+      sparky_firewall_cidr_confirmed must be true when sparky_configure_firewall is true.
+      Set sparky_admin_cidr, sparky_internal_cidr, and sparky_monitoring_cidr to your
+      site-specific networks first (see inventory/group_vars/sparky.yml.example).
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Install UFW (firewall)
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Allow SSH from admin network
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "{{ sparky_admin_cidr }}"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Allow Sparky gateway from internal network (PLAN §4.1)
+  community.general.ufw:
+    rule: allow
+    port: "8080"
+    proto: tcp
+    src: "{{ sparky_internal_cidr }}"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Allow node_exporter from monitoring network
+  community.general.ufw:
+    rule: allow
+    port: "9100"
+    proto: tcp
+    src: "{{ sparky_monitoring_cidr }}"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Allow GPU exporter from monitoring network (optional DCGM/NVIDIA exporter)
+  community.general.ufw:
+    rule: allow
+    port: "9400"
+    proto: tcp
+    src: "{{ sparky_monitoring_cidr }}"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Set default incoming policy (deny)
+  community.general.ufw:
+    direction: incoming
+    default: deny
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Set default outgoing policy (allow)
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_configure_firewall | bool
+
+- name: Deploy SSH drop-in for Sparky policy
+  ansible.builtin.copy:
+    dest: "{{ sparky_sshd_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible — roles/base (PLAN §10)
+      PasswordAuthentication {{ 'no' if not (sparky_ssh_password_authentication | bool) else 'yes' }}
+    notify: Restart ssh
+  when: sparky_ssh_harden | bool

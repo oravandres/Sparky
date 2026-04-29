@@ -1533,10 +1533,14 @@ HunyuanVideo-1.5
   "width": 1280,
   "height": 720,
   "fps": 24,
+  "max_frames": 120,
+  "max_pixel_frames": 110592000,
   "seed": 123,
   "metadata": {}
 }
 ```
+
+`max_frames` must equal ceil(duration_seconds × fps); `max_pixel_frames` must equal that frame count × width × height (see `config/api-contract.yaml` Phase 1 caps).
 
 ### Acceptance criteria
 

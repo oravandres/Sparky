@@ -1,0 +1,34 @@
+---
+# Base OS role defaults — override via inventory/group_vars/sparky.yml (see sparky.yml.example).
+
+sparky_service_user: sparky
+sparky_service_group: sparky
+# Extra UNIX groups for the service user (e.g. docker after Phase 2).
+sparky_service_user_extra_groups: []
+
+# Hostname — fqdn preferred for DNS alignment (PLAN §4.2).
+sparky_hostname: sparky.mimi.local
+sparky_hostname_short: "{{ sparky_hostname.split('.') | first }}"
+
+sparky_timezone: Etc/UTC
+
+# APT: refresh cache; set true to run a full package upgrade (can be disruptive).
+sparky_apt_update_cache: true
+sparky_apt_cache_valid_seconds: 3600
+sparky_apt_upgrade: false
+
+# SSH: only enable hardening when keys are confirmed — risk of lockout (PLAN §10).
+sparky_ssh_harden: false
+sparky_ssh_password_authentication: true
+sparky_sshd_config_path: /etc/ssh/sshd_config.d/50-sparky.conf
+
+# Firewall (UFW on Debian/Ubuntu). Default off until site CIDRs are confirmed —
+# enabling with placeholder RFC1918 ranges can lock SSH on remote installs.
+sparky_configure_firewall: false
+# Set true only after sparky_admin_cidr / sparky_internal_cidr /
+# sparky_monitoring_cidr are set to real networks for this site.
+sparky_firewall_cidr_confirmed: false
+# CIDRs for UFW rules (PLAN §10). Defaults are placeholders only.
+sparky_admin_cidr: 10.0.0.0/8
+sparky_internal_cidr: 10.0.0.0/8
+sparky_monitoring_cidr: 10.0.0.0/8
