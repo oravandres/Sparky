@@ -11,6 +11,10 @@ info:
 
     Auth: `Authorization: Bearer <SPARKY_API_KEY>`. The key is mirrored from
     MiMi-Secrets (sealed secret `sparky-api-key`) per PLAN §10.
+
+    Request bodies are validated against this schema before enqueue or proxy;
+    out-of-policy numeric bounds or unsafe URIs receive HTTP 422 with an error
+    envelope (same shape as other gateway errors).
   contact:
     name: Sparky maintainers
     url: https://github.com/oravandres/Sparky
@@ -113,6 +117,7 @@ paths:
                 type: object
                 additionalProperties: true
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
         "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/reasoning/analyze:
@@ -297,6 +302,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /v1/media/video/jobs:
     post:
@@ -316,6 +322,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /v1/audio/tts/jobs:
     post:
@@ -335,6 +342,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /v1/audio/asr/jobs:
     post:
@@ -354,6 +362,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
 
   /v1/jobs/{job_id}:
     get:
@@ -411,6 +420,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Unavailable:
       description: Underlying runtime is unavailable (model loading, evicting, etc.)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    UnprocessableEntity:
+      description: Request failed schema or policy validation (bounds, URI allowlist, etc.)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -517,8 +531,10 @@ components:
               content: { type: string }
         temperature: { type: number }
         max_tokens: { type: integer }
-        stream: { type: boolean }
       additionalProperties: true
+      description: >
+        Streaming (`stream: true`) is intentionally omitted until the gateway
+        implements SSE `text/event-stream` chunks compatible with OpenAI clients.
 
     ReasoningAnalyzeRequest:
       type: object
@@ -849,12 +865,33 @@ components:
         model:
           type: string
           enum: [flux2-dev, flux2-klein, qwen-image, hunyuanimage-3-instruct]
-        prompt: { type: string }
-        negative_prompt: { type: string }
-        width: { type: integer, default: 1024 }
-        height: { type: integer, default: 1024 }
-        steps: { type: integer, default: 30 }
-        seed: { type: integer }
+        prompt:
+          type: string
+          maxLength: 32000
+        negative_prompt:
+          type: string
+          maxLength: 32000
+        width:
+          type: integer
+          minimum: 256
+          maximum: 4096
+          multipleOf: 64
+          default: 1024
+        height:
+          type: integer
+          minimum: 256
+          maximum: 4096
+          multipleOf: 64
+          default: 1024
+        steps:
+          type: integer
+          minimum: 1
+          maximum: 150
+          default: 30
+        seed:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         metadata: { type: object, additionalProperties: true }
 
     VideoJobRequest:
@@ -864,12 +901,35 @@ components:
         model:
           type: string
           enum: [ltx-2, wan-2.2, hunyuanvideo-1.5]
-        prompt: { type: string }
-        duration_seconds: { type: integer, default: 5 }
-        width: { type: integer, default: 1280 }
-        height: { type: integer, default: 720 }
-        fps: { type: integer, default: 24 }
-        seed: { type: integer }
+        prompt:
+          type: string
+          maxLength: 32000
+        duration_seconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+          default: 5
+        width:
+          type: integer
+          minimum: 256
+          maximum: 3840
+          multipleOf: 16
+          default: 1280
+        height:
+          type: integer
+          minimum: 256
+          maximum: 2160
+          multipleOf: 16
+          default: 720
+        fps:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 24
+        seed:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
         metadata: { type: object, additionalProperties: true }
 
     TtsJobRequest:
@@ -879,7 +939,9 @@ components:
         model:
           type: string
           enum: [qwen3-tts, voxcpm2]
-        text: { type: string }
+        text:
+          type: string
+          maxLength: 50000
         language:
           type: string
           enum: [en, et, multi]
@@ -896,7 +958,14 @@ components:
         model:
           type: string
           enum: [qwen3-asr]
-        input_uri: { type: string, format: uri }
+        input_uri:
+          type: string
+          maxLength: 4096
+          pattern: '^file:///data/(outputs|models)/[\w./-]+$'
+          description: >
+            Local Sparky paths only (`file:///data/outputs/…` or
+            `file:///data/models/…`). HTTP(S), link-local, and other schemes are
+            rejected at validation time to prevent SSRF against internal services.
         language:
           type: string
           enum: [auto, en, et]
