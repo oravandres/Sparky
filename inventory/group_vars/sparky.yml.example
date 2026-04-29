@@ -29,6 +29,11 @@ sparky_data_mount: /data
 # sparky_ssh_password_authentication: true
 # sparky_apt_upgrade: false               # true runs apt full upgrade (disruptive)
 
+# --- Phase 2 — container runtime (playbooks/30-container-runtime.yml, PLAN §11) ---
+# sparky_install_docker: true
+# sparky_install_nvidia_container_toolkit: true   # false if toolkit is pre-installed or air-gapped
+# sparky_add_service_user_to_docker_group: true
+
 # --- Secrets (placeholders only; real values via ansible-vault) ---
 hf_token: ""                          # Hugging Face token for gated weights
 ngc_api_key: ""                       # NVIDIA NGC API key

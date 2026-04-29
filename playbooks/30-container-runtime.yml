@@ -1,0 +1,8 @@
+---
+# Phase 2 — Docker, Compose v2, NVIDIA Container Toolkit (PLAN §11).
+- name: Sparky Phase 2 — container runtime and NVIDIA
+  hosts: sparky
+  gather_facts: true
+  become: true
+  roles:
+    - role: container_runtime

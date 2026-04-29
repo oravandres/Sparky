@@ -1,0 +1,7 @@
+---
+# Handlers — container runtime (PLAN §11 Phase 2).
+
+- name: Restart docker
+  ansible.builtin.service:
+    name: docker
+    state: restarted

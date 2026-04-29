@@ -1,0 +1,158 @@
+---
+# Docker, Compose v2 (Ubuntu), NVIDIA Container Toolkit — PLAN §11 Phase 2.
+
+- name: Build Docker apt package list
+  ansible.builtin.set_fact:
+    sparky_docker_apt_packages_resolved: >-
+      {{
+        sparky_docker_apt_packages
+        + (
+            ['docker-compose-v2']
+            if (ansible_distribution == 'Ubuntu' and sparky_docker_compose_v2_on_ubuntu | bool)
+            else []
+          )
+      }}
+
+- name: Install Docker packages (distribution)
+  ansible.builtin.apt:
+    name: "{{ sparky_docker_apt_packages_resolved }}"
+    state: present
+    update_cache: "{{ sparky_container_runtime_apt_update_cache | default(true) | bool }}"
+  notify: Restart docker
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_docker | bool
+
+- name: Enable and start Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_docker | bool
+
+- name: Add Sparky service user to docker group
+  ansible.builtin.user:
+    name: "{{ sparky_service_user }}"
+    groups: docker
+    append: true
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_docker | bool
+    - sparky_add_service_user_to_docker_group | bool
+
+- name: Set NVIDIA deb architecture for libnvidia-container repo
+  ansible.builtin.set_fact:
+    sparky_nvidia_deb_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Download NVIDIA Container Toolkit GPG key
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    dest: /tmp/sparky-nvct-gpg.asc
+    mode: "0644"
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Dearmor NVIDIA GPG key for apt
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --batch
+      - --yes
+      - -o
+      - /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      - /tmp/sparky-nvct-gpg.asc
+    creates: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Remove temporary NVIDIA GPG ascii key
+  ansible.builtin.file:
+    path: /tmp/sparky-nvct-gpg.asc
+    state: absent
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Add NVIDIA Container Toolkit apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg]
+      https://nvidia.github.io/libnvidia-container/stable/deb/{{ sparky_nvidia_deb_arch }} /
+    filename: nvidia-container-toolkit
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Install NVIDIA Container Toolkit
+  ansible.builtin.apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+  register: sparky_nvct_pkg
+  notify: Restart docker
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Stat Docker daemon.json before NVIDIA runtime configuration
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: sparky_daemon_stat
+  changed_when: false
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+
+- name: Read Docker daemon.json for NVIDIA runtime detection
+  ansible.builtin.slurp:
+    path: /etc/docker/daemon.json
+  register: sparky_daemon_json
+  changed_when: false
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool
+    - sparky_daemon_stat.stat.exists | default(false)
+
+- name: Configure NVIDIA Container Toolkit for Docker
+  ansible.builtin.command:
+    argv:
+      - nvidia-ctk
+      - runtime
+      - configure
+      - --runtime=docker
+  register: sparky_nvct_configure
+  vars:
+    _daemon_decoded: >-
+      {{
+        (sparky_daemon_json.content | b64decode)
+        if (sparky_daemon_json is defined and sparky_daemon_json.content is defined)
+        else ''
+      }}
+  changed_when: >-
+    sparky_nvct_pkg.changed | default(false)
+    or not (sparky_daemon_stat.stat.exists | default(false))
+    or (('nvidia' not in _daemon_decoded) and ('nvidia-container-runtime' not in _daemon_decoded))
+  notify: Restart docker
+  when:
+    - ansible_os_family == "Debian"
+    - sparky_install_nvidia_container_toolkit | bool

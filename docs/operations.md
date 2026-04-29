@@ -32,7 +32,13 @@ to a vault-managed `sparky.yml` if you use vault):
 ansible-playbook -i inventory/hosts.yml playbooks/00-preflight.yml
 ansible-playbook -i inventory/hosts.yml playbooks/10-base-os.yml
 ansible-playbook -i inventory/hosts.yml playbooks/20-storage.yml   # needs /data (or sparky_data_mount) present
+ansible-playbook -i inventory/hosts.yml playbooks/30-container-runtime.yml
 ```
+
+Phase 2 installs Docker (distribution packages), Compose v2 on Ubuntu (`docker-compose-v2`),
+the NVIDIA Container Toolkit, and runs `nvidia-ctk runtime configure --runtime=docker`.
+Override or skip pieces via `roles/container_runtime/defaults/main.yml` and
+`inventory/group_vars/sparky.yml` (e.g. `sparky_install_nvidia_container_toolkit: false` in air-gapped installs).
 
 GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
 
@@ -41,6 +47,8 @@ GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
 ```
 
 Use `./scripts/check-gpu.sh --host-only` (or `SPARKY_GPU_CHECK_HOST_ONLY=1`) only when Docker or the NVIDIA Container Toolkit is intentionally absent; a full appliance install should pass the container probe.
+
+Record validation on the appliance (PLAN §11 acceptance): note `docker --version`, `docker compose version`, host `nvidia-smi` summary, and whether the CUDA image probe in `check-gpu.sh` succeeded (image tag used if non-default).
 
 ## Hardware & storage (Phase 0 — preflight, PLAN §9)
 

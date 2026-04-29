@@ -1,0 +1,15 @@
+---
+# Container runtime — PLAN §11 Phase 2. Override via inventory/group_vars/sparky.yml.
+
+# Service user must match roles/base (created in Phase 1).
+sparky_service_user: sparky
+
+sparky_install_docker: true
+# Ubuntu: add docker-compose-v2 (CLI plugin). Debian: override sparky_docker_apt_packages if needed.
+sparky_docker_compose_v2_on_ubuntu: true
+sparky_docker_apt_packages:
+  - docker.io
+
+sparky_install_nvidia_container_toolkit: true
+# Skip NVIDIA repo + toolkit in air-gapped labs; install drivers separately and set false.
+sparky_add_service_user_to_docker_group: true
