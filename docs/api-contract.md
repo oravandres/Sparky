@@ -45,9 +45,9 @@ duration, unsafe URIs) rather than failing deep inside a worker:
 - **Image / video jobs**: width, height, steps, duration, and fps carry
   explicit min/max and alignment (`multipleOf`) bounds matching supported
   ComfyUI workflows.
-- **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` with a
-  pattern that rejects `..` and `%2e%2e` traversal; gateway still canonicalizes
-  paths before opening files.
+- **ASR**: `input_uri` must match `file:///data/(outputs|models)/…` with a schema
+  pattern that rejects `..` and `%2e%2e` / `%2E%2E`-style encoding (no regex inline
+  flags—ECMA-262 / JS-safe); gateway still canonicalizes paths before opening files.
 
 ## Drift policy
 

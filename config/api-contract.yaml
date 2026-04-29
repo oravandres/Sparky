@@ -967,12 +967,13 @@ components:
         input_uri:
           type: string
           maxLength: 4096
-          pattern: '^file:///data/(outputs|models)/(?!.*(\.\.|(?i)%2e%2e))[\w./-]+$'
+          pattern: '^file:///data/(outputs|models)/(?!.*(\.\.|%2[eE]%2[eE]))[\w./-]+$'
           description: >
             Local Sparky paths only under `/data/outputs/` or `/data/models/`.
-            Rejects `..`, URL-encoded traversal (`%2e%2e`), `http(s)://`, and other
-            schemes at validation time (SSRF / path escape). Gateway must still
-            resolve and canonicalize before open (PLAN §17).
+            Rejects `..` and literal `%2e%2e` / `%2E%2E`-style URL-encoded traversal
+            without regex inline flags (OpenAPI 3.1 patterns use ECMA-262; avoids
+            `(?i)` for JS validators and codegen). Gateway must still canonicalize
+            paths before open (PLAN §17).
         language:
           type: string
           enum: [auto, en, et]
