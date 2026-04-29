@@ -1,5 +1,7 @@
 # Ansible
 .ansible_cache/
+# ansible-galaxy collection install -p .ansible/collections (operator-local)
+.ansible/
 *.retry
 .vault_pass
 

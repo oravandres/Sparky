@@ -1,0 +1,54 @@
+---
+# Create model / cache / output trees (PLAN §8, config/model-registry defaults).
+
+- name: Ensure data mount exists
+  ansible.builtin.stat:
+    path: "{{ sparky_data_mount }}"
+  register: sparky_data_mount_stat
+
+- name: Fail when data mount is missing
+  ansible.builtin.fail:
+    msg: >-
+      Mount {{ sparky_data_mount }} does not exist. Run preflight, attach NVMe,
+      then create the mount before playbooks/20-storage.yml.
+  when: not sparky_data_mount_stat.stat.exists | default(false)
+
+- name: Create models tier directories
+  ansible.builtin.file:
+    path: "{{ sparky_data_mount }}/models/{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0775"
+  loop:
+    - text
+    - image
+    - video
+    - audio
+
+- name: Create cache tier directories
+  ansible.builtin.file:
+    path: "{{ sparky_data_mount }}/cache/{{ item }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0775"
+  loop:
+    - huggingface
+    - torch
+    - comfyui
+    - vllm
+    - trtllm
+    - pip
+
+- name: Create outputs tier directories
+  ansible.builtin.file:
+    path: "{{ sparky_data_mount }}/outputs/{{ item }}"
+    state: directory
+    owner: "{{ sparky_service_user }}"
+    group: "{{ sparky_service_group }}"
+    mode: "0775"
+  loop:
+    - images
+    - videos
+    - audio

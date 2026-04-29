@@ -50,6 +50,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "ansible-core>=2.17,<2.19" "ansible-lint==24.12.2"
+      - name: Install Ansible collections (roles/base UFW, timezone)
+        run: ansible-galaxy collection install -r collections/requirements.yml
       - run: ansible-lint
 
   shellcheck:

@@ -1,0 +1,13 @@
+---
+# Phase 0 — record appliance facts for docs (full disk/GPU checks: scripts/preflight.sh).
+- name: Sparky Phase 0 — preflight facts
+  hosts: sparky
+  gather_facts: true
+  tasks:
+    - name: Emit key facts for operator records (PLAN §9)
+      ansible.builtin.debug:
+        msg:
+          - "ansible_architecture={{ ansible_architecture }}"
+          - "ansible_distribution={{ ansible_distribution }}"
+          - "ansible_distribution_version={{ ansible_distribution_version }}"
+          - "ansible_memtotal_mb={{ ansible_memtotal_mb }}"

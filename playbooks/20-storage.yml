@@ -1,0 +1,8 @@
+---
+# Phase 1 — NVMe/data tree for models, cache, outputs (PLAN §8). Requires sparky_data_mount.
+- name: Sparky Phase 1 — storage layout
+  hosts: sparky
+  gather_facts: false
+  become: true
+  roles:
+    - role: storage

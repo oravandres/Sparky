@@ -18,6 +18,15 @@ sparky_admin_user: andres
 # --- Storage mount discovered in preflight (PLAN.md §8) ---
 sparky_data_mount: /data
 
+# --- Phase 1 base OS / firewall (playbooks/10-base-os.yml) ---
+# sparky_configure_firewall: true
+# sparky_admin_cidr: 10.0.0.0/8        # SSH source
+# sparky_internal_cidr: 10.0.0.0/8      # gateway 8080 — MiMi / DarkBase
+# sparky_monitoring_cidr: 10.0.0.0/8    # node_exporter / GPU exporter
+# sparky_ssh_harden: false              # true only after SSH keys verified
+# sparky_ssh_password_authentication: true
+# sparky_apt_upgrade: false             # true runs apt full upgrade (disruptive)
+
 # --- Secrets (placeholders only; real values via ansible-vault) ---
 hf_token: ""                          # Hugging Face token for gated weights
 ngc_api_key: ""                       # NVIDIA NGC API key

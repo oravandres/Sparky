@@ -1,0 +1,6 @@
+---
+# Ansible Galaxy collections — install before ansible-playbook / ansible-lint locally:
+#   ansible-galaxy collection install -r collections/requirements.yml
+collections:
+  - name: community.general
+    version: ">=9.5.0"
