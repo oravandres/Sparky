@@ -57,3 +57,12 @@ duration, unsafe URIs) rather than failing deep inside a worker:
 `config/api-contract.yaml` is kept in lockstep with the FastAPI route
 definitions in `services/sparky-gateway/`. CI (PLAN §22) lints both for
 drift; PRs that change a route must update both files in the same change.
+
+## Implemented in Phase 3
+
+`/health`, `/ready`, `/v1/models`, and `/metrics` are live in
+[`services/sparky-gateway/`](../services/sparky-gateway/). All other
+families above are scaffolded in the OpenAPI document and land in their
+respective phase PRs (PLAN §25). Until then the gateway returns the
+documented schema for the Phase 3 routes only — calls to unimplemented
+paths return `404` with the standard error envelope.
