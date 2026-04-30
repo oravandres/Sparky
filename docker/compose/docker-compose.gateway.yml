@@ -6,8 +6,11 @@
 #   docker compose --env-file /etc/sparky/sparky.env \
 #       -f docker/compose/docker-compose.gateway.yml up -d
 #
-# The container binds 0.0.0.0:8080 inside its network namespace; the host
-# firewall (PLAN §10) restricts external reachability to the MiMi/DarkBase LAN.
+# Defaults for bind address, log level, and config paths come from the image Dockerfile (`ENV`).
+# Set overrides (e.g. SPARKY_LOG_LEVEL=debug) only via keys in the env_file below — avoid a Compose
+# `environment:` map here: Compose applies it after env_file and hard-coded literals override the file.
+#
+# The container typically listens on port 8080; the host firewall (PLAN §10) restricts LAN reachability.
 
 services:
   sparky-gateway:
@@ -22,12 +25,6 @@ services:
     env_file:
       # Honour SPARKY_ENV_FILE when exported (scripts/start-gateway.sh); default appliance path.
       - ${SPARKY_ENV_FILE:-/etc/sparky/sparky.env}
-    environment:
-      # Container-side defaults; env_file values win when set.
-      SPARKY_GATEWAY_BIND: 0.0.0.0:8080
-      SPARKY_LOG_LEVEL: info
-      SPARKY_MODEL_REGISTRY_PATH: /opt/sparky/config/model-registry.yaml
-      SPARKY_LOGGING_CONFIG_PATH: /opt/sparky/config/logging.yaml
     volumes:
       - /opt/sparky/config:/opt/sparky/config:ro
       - /var/log/sparky/sparky-gateway:/var/log/sparky/sparky-gateway
