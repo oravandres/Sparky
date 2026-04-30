@@ -1,0 +1,55 @@
+---
+# Sparky Gateway compose unit — see PLAN.md §4.1 / §12.
+# Run with the env file mirrored from MiMi-Secrets:
+#
+#   docker compose --env-file /etc/sparky/sparky.env \
+#       -f docker/compose/docker-compose.gateway.yml up -d
+#
+# The container binds 0.0.0.0:8080 inside its network namespace; the host
+# firewall (PLAN §10) restricts external reachability to the MiMi/DarkBase LAN.
+
+services:
+  sparky-gateway:
+    image: ghcr.io/oravandres/sparky/sparky-gateway:latest
+    build:
+      # Build context is the repo root so the image can copy both
+      # services/sparky-common and services/sparky-gateway.
+      context: ../..
+      dockerfile: services/sparky-gateway/Dockerfile
+    container_name: sparky-gateway
+    restart: unless-stopped
+    env_file:
+      - /etc/sparky/sparky.env
+    environment:
+      # Container-side defaults; env_file values win when set.
+      SPARKY_GATEWAY_BIND: 0.0.0.0:8080
+      SPARKY_LOG_LEVEL: info
+      SPARKY_MODEL_REGISTRY_PATH: /opt/sparky/config/model-registry.yaml
+      SPARKY_LOGGING_CONFIG_PATH: /opt/sparky/config/logging.yaml
+    volumes:
+      - /opt/sparky/config:/opt/sparky/config:ro
+      - /var/log/sparky/sparky-gateway:/var/log/sparky/sparky-gateway
+    ports:
+      - "8080:8080"
+    logging:
+      driver: journald
+      options:
+        tag: "sparky-gateway"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health',
+          timeout=3).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
