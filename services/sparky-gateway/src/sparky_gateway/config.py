@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     sparky_agentic_rag_synthesize_max_tokens: int = Field(default=4096, ge=256, le=16384)
     sparky_agentic_rag_verify_max_tokens: int = Field(default=2048, ge=256, le=16384)
     sparky_agentic_rag_finalize_max_tokens: int = Field(default=4096, ge=256, le=16384)
+    # Coding intelligence — Nemotron-backed code review / architecture / refactor-plan /
+    # security-review (PLAN §5.4, §15). All four routes share one tunable ceiling; bump via
+    # config rather than per-route env vars so operators have a single dial.
+    sparky_coding_model_id: str = "nemotron-3-super-120b-a12b-nvfp4"
+    sparky_coding_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    sparky_coding_max_tokens: int = Field(default=4096, ge=256, le=16384)
 
     nemotron_vllm_url: str = "http://127.0.0.1:8000"
     nemotron_trtllm_url: str = "http://127.0.0.1:8001"

@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException
 from . import (
     agentic_rag_routes,
     chat_routes,
+    coding_routes,
     errors,
     health,
     metrics,
@@ -104,6 +105,7 @@ def create_app(settings: Settings | None = None) -> BodySizeLimitASGI:
     app.include_router(chat_routes.router)
     app.include_router(reasoning_routes.router)
     app.include_router(agentic_rag_routes.router)
+    app.include_router(coding_routes.router)
     app.include_router(metrics.router)
 
     log.info(
