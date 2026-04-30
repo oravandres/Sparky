@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     sparky_reasoning_model_id: str = "nemotron-3-super-120b-a12b-nvfp4"
     sparky_reasoning_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     sparky_reasoning_compare_max_tokens: int = Field(default=4096, ge=256, le=16384)
+    # Agentic RAG — Nemotron-backed stages share the reasoning model by default (PLAN §6, §14).
+    sparky_agentic_rag_model_id: str = "nemotron-3-super-120b-a12b-nvfp4"
+    sparky_agentic_rag_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    sparky_agentic_rag_plan_max_tokens: int = Field(default=2048, ge=256, le=16384)
+    sparky_agentic_rag_evaluate_max_tokens: int = Field(default=2048, ge=256, le=16384)
+    sparky_agentic_rag_synthesize_max_tokens: int = Field(default=4096, ge=256, le=16384)
+    sparky_agentic_rag_verify_max_tokens: int = Field(default=2048, ge=256, le=16384)
+    sparky_agentic_rag_finalize_max_tokens: int = Field(default=4096, ge=256, le=16384)
 
     nemotron_vllm_url: str = "http://127.0.0.1:8000"
     nemotron_trtllm_url: str = "http://127.0.0.1:8001"
