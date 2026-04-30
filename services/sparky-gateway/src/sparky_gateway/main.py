@@ -5,8 +5,12 @@ See PLAN.md §12 for the gateway requirements and §5.1 for the Phase 3 route se
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
@@ -16,8 +20,25 @@ from .config import Settings
 from .logging_setup import setup_logging
 from .registry import load_registry
 from .request_id import RequestIdMiddleware
+from .request_limits import LimitRequestBodyMiddleware
 
 log = logging.getLogger("sparky_gateway")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings: Settings = app.state.settings
+    limits = httpx.Limits(
+        max_connections=32,
+        max_keepalive_connections=max(4, settings.sparky_nemotron_max_inflight * 2),
+    )
+    timeout = httpx.Timeout(settings.sparky_request_timeout_seconds)
+    app.state.http_client = httpx.AsyncClient(limits=limits, timeout=timeout)
+    app.state.nemotron_sem = asyncio.Semaphore(settings.sparky_nemotron_max_inflight)
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -50,14 +71,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if doc_urls else None,
         redoc_url="/redoc" if doc_urls else None,
         openapi_url="/openapi.json" if doc_urls else None,
+        lifespan=_lifespan,
     )
     app.state.settings = settings
     app.state.registry = load_registry(settings.sparky_model_registry_path)
 
-    # Order matters: outermost middleware is added LAST. RequestId runs inner
-    # so the metrics span fully envelopes id assignment.
+    # Order matters: outermost middleware is added LAST. Body limit runs first,
+    # then metrics, then request id innermost.
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(metrics.MetricsMiddleware)
+    app.add_middleware(LimitRequestBodyMiddleware, settings=settings)
 
     # FastAPI's add_exception_handler is typed to accept (Request, Exception)
     # but our handlers narrow to specific subclasses. The runtime contract is
