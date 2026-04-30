@@ -388,10 +388,56 @@ def _finalize_compare_response(
     rid: str | None,
     model_id: str,
 ) -> ReasoningCompareResponseBody:
-    """Ensure scores reference the caller payload and totals match weights."""
+    """Ensure scores reference the caller payload and totals match weights.
 
-    opt_ids = {o.id for o in body.options}
-    crit_weights = {c.id: float(c.weight) for c in body.criteria}
+    Validates option/criterion id cardinality here — not only via RequestModel
+    validators — so duplicate ids cannot silently collapse the score matrix even
+    if a future code path skips Pydantic validation.
+    """
+
+    opt_ids_fs = frozenset(o.id for o in body.options)
+    if len(opt_ids_fs) != len(body.options):
+        log.warning(
+            "reasoning_compare_duplicate_option_ids",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "options_count": len(body.options),
+                "unique_option_ids": len(opt_ids_fs),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=envelope(
+                "invalid_request",
+                "options must use unique id values within the request",
+                rid,
+            ),
+        )
+
+    crit_weights: dict[str, float] = {}
+    for c in body.criteria:
+        cid = c.id
+        if cid in crit_weights:
+            log.warning(
+                "reasoning_compare_duplicate_criterion_ids",
+                extra={
+                    "request_id": rid,
+                    "model": model_id,
+                    "criterion_id": cid,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=envelope(
+                    "invalid_request",
+                    "criteria must use unique id values within the request",
+                    rid,
+                ),
+            )
+        crit_weights[cid] = float(c.weight)
+
+    opt_ids = opt_ids_fs
     expected_pairs = {(oid, cid) for oid in opt_ids for cid in crit_weights}
 
     by_pair: dict[tuple[str, str], CompareScoreOut] = {}

@@ -6,10 +6,22 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from sparky_gateway.config import Settings
 from sparky_gateway.main import create_app
+from sparky_gateway.reasoning_routes import (
+    CompareCriterionIn,
+    CompareOptionIn,
+    CompareRecommendationOut,
+    CompareScoreOut,
+    CompareTotalOut,
+    ReasoningCompareRequestBody,
+    ReasoningCompareResponseBody,
+    _finalize_compare_response,
+)
 
 _ANALYZE_OK = {
     "summary": "S",
@@ -121,6 +133,61 @@ def test_reasoning_compare_rejects_duplicate_criterion_ids(
         },
     )
     assert r.status_code == 422
+
+
+def test_finalize_compare_rejects_duplicate_option_ids_even_if_constructed_without_validation() -> (
+    None
+):
+    """Regression: finalize must not build the matrix from collapsed unique ids."""
+    body = ReasoningCompareRequestBody.model_construct(
+        question="?",
+        options=[
+            CompareOptionIn.model_construct(id="dup", name="A"),
+            CompareOptionIn.model_construct(id="dup", name="B"),
+        ],
+        criteria=[CompareCriterionIn.model_construct(id="c", name="Criterion")],
+        constraints=[],
+    )
+    noop = ReasoningCompareResponseBody(
+        scores=[
+            CompareScoreOut(
+                option_id="dup",
+                criterion_id="c",
+                score=1.0,
+                rationale="-",
+            ),
+        ],
+        totals=[CompareTotalOut(option_id="dup", weighted_total=0.0)],
+        recommendation=CompareRecommendationOut(option_id="dup", reasoning="-"),
+        confidence="medium",
+    )
+    with pytest.raises(HTTPException) as ei:
+        _finalize_compare_response(body, noop, rid="rid-1", model_id="nemotron-under-test")
+    assert ei.value.status_code == 422
+    assert ei.value.detail["error"]["code"] == "invalid_request"
+
+
+def test_finalize_compare_rejects_duplicate_criterion_ids_even_if_constructed_without_validation() -> (
+    None
+):
+    body = ReasoningCompareRequestBody.model_construct(
+        question="?",
+        options=[CompareOptionIn.model_construct(id="o1", name="Opt")],
+        criteria=[
+            CompareCriterionIn.model_construct(id="same", name="First", weight=1.0),
+            CompareCriterionIn.model_construct(id="same", name="Second", weight=99.0),
+        ],
+        constraints=[],
+    )
+    noop = ReasoningCompareResponseBody(
+        scores=[],
+        totals=[],
+        recommendation=CompareRecommendationOut(option_id="o1", reasoning="-"),
+        confidence="low",
+    )
+    with pytest.raises(HTTPException) as ei:
+        _finalize_compare_response(body, noop, rid="rid-2", model_id="nemotron-under-test")
+    assert ei.value.status_code == 422
 
 
 def test_reasoning_analyze_proxies_and_validates_json(
