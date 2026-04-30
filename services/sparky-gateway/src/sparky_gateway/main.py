@@ -20,7 +20,7 @@ from .config import Settings
 from .logging_setup import setup_logging
 from .registry import load_registry
 from .request_id import RequestIdMiddleware
-from .request_limits import LimitRequestBodyMiddleware
+from .request_limits import BodySizeLimitASGI
 
 log = logging.getLogger("sparky_gateway")
 
@@ -41,7 +41,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.http_client.aclose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> BodySizeLimitASGI:
     """Build the FastAPI app.
 
     Refuses to boot without `SPARKY_API_KEY` (PLAN §10). The model registry
@@ -76,11 +76,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.registry = load_registry(settings.sparky_model_registry_path)
 
-    # Order matters: outermost middleware is added LAST. Body limit runs first,
-    # then metrics, then request id innermost.
+    # Metrics outermost on the FastAPI stack; request id innermost. HTTP body size
+    # is capped above this stack via BodySizeLimitASGI (chunk-safe receive).
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(metrics.MetricsMiddleware)
-    app.add_middleware(LimitRequestBodyMiddleware, settings=settings)
 
     # FastAPI's add_exception_handler is typed to accept (Request, Exception)
     # but our handlers narrow to specific subclasses. The runtime contract is
@@ -104,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "bind": settings.sparky_gateway_bind,
         },
     )
-    return app
+    return BodySizeLimitASGI(app, settings.sparky_max_request_body_bytes)
 
 
 # Run with uvicorn's factory mode so config validation happens at startup,
