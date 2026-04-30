@@ -212,15 +212,12 @@ async def chat_completions(
             raise
 
     if upstream.status_code < 200 or upstream.status_code >= 300:
-        snippet = (upstream.text or "")[:500].replace("\n", " ").strip()
-        if len(snippet) > 200:
-            snippet = snippet[:200] + "…"
         log.warning(
             "chat_completions_upstream_error",
             extra={
                 "request_id": rid,
                 "upstream_status": upstream.status_code,
-                "upstream_snippet": snippet,
+                "upstream_content_type": upstream.headers.get("content-type", ""),
             },
         )
         raise HTTPException(
@@ -238,8 +235,8 @@ async def chat_completions(
             "chat_completions_upstream_non_json",
             extra={
                 "request_id": rid,
-                "content_type": ct,
-                "upstream_snippet": (upstream.text or "")[:200],
+                "upstream_status": upstream.status_code,
+                "upstream_content_type": ct,
             },
         )
         raise HTTPException(
