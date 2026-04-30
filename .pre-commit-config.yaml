@@ -44,6 +44,9 @@ repos:
     hooks:
       - id: ansible-lint
         files: ^(playbooks|roles)/.*\.(ya?ml)$
+        additional_dependencies:
+          # Match .github/workflows/ci.yml — avoids hook venv missing ansible-core internals.
+          - ansible-core>=2.17,<2.19
 
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.10.0
