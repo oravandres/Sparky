@@ -20,4 +20,5 @@ if [[ ! -f "${COMPOSE_FILE}" ]]; then
   exit 1
 fi
 
+export SPARKY_ENV_FILE="${ENV_FILE}"
 exec docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"

@@ -32,3 +32,6 @@ class Settings(BaseSettings):
 
     sparky_model_registry_path: Path = Path("/opt/sparky/config/model-registry.yaml")
     sparky_logging_config_path: Path | None = None
+
+    # Dev-only: exposes /docs, /redoc, /openapi.json (otherwise omitted — PLAN §12 auth surface).
+    sparky_enable_openapi_docs: bool = False

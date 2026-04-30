@@ -27,13 +27,20 @@ def ready(request: Request, response: Response) -> dict[str, Any]:
     deps: dict[str, dict[str, str]] = {}
 
     registry = getattr(request.app.state, "registry", None)
-    if registry is not None and len(registry.models) > 0:
-        deps["model_registry"] = {
-            "status": "ready",
-            "detail": f"{len(registry.active())} active models",
-        }
-    else:
+    if registry is None:
         deps["model_registry"] = {"status": "not_ready", "detail": "registry not loaded"}
+    else:
+        active = registry.active()
+        if len(active) > 0:
+            deps["model_registry"] = {
+                "status": "ready",
+                "detail": f"{len(active)} active models",
+            }
+        else:
+            deps["model_registry"] = {
+                "status": "not_ready",
+                "detail": "no active models in registry",
+            }
 
     overall = "ready" if all(d["status"] == "ready" for d in deps.values()) else "not_ready"
     if overall != "ready":

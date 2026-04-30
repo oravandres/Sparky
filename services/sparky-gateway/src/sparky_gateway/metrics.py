@@ -43,12 +43,13 @@ REQUEST_LATENCY_SECONDS = Histogram(
 def _route_template(request: Request) -> str:
     """Use the matched route template when available to bound metric cardinality.
 
-    Falls back to the literal path; for Phase 3 the route set is small.
+    Unmatched routes (404 spam, scanners) must not use the literal URL path — that
+    creates an unbounded Prometheus label cardinality explosion.
     """
     route = request.scope.get("route")
     if route is not None and getattr(route, "path", None):
         return str(route.path)
-    return request.url.path
+    return "__unmatched__"
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):

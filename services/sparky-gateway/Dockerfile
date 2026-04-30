@@ -53,6 +53,7 @@ EXPOSE 8080
 
 # Use uvicorn's --factory mode so create_app() runs once per process and
 # fails loudly if SPARKY_API_KEY is missing (PLAN §10).
+# Direct publish on 8080 — do not trust X-Forwarded-* from arbitrary LAN clients.
+# When a reverse proxy is added, override CMD with scoped --forwarded-allow-ips.
 CMD ["uvicorn", "--factory", "sparky_gateway.main:create_app", \
-     "--host", "0.0.0.0", "--port", "8080", \
-     "--proxy-headers", "--forwarded-allow-ips=*"]
+     "--host", "0.0.0.0", "--port", "8080"]

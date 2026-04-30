@@ -17,7 +17,7 @@ pip install -e '.[test]'
 export SPARKY_API_KEY="$(openssl rand -hex 32)"
 export SPARKY_MODEL_REGISTRY_PATH="$PWD/../../config/model-registry.yaml"
 
-uvicorn sparky_gateway.main:app --host 127.0.0.1 --port 8080
+uvicorn --factory sparky_gateway.main:create_app --host 127.0.0.1 --port 8080
 ```
 
 ## Tests

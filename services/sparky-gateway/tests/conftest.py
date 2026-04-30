@@ -41,3 +41,28 @@ def client(settings: Settings) -> Iterator[TestClient]:
 @pytest.fixture
 def auth_header() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_API_KEY}"}
+
+
+@pytest.fixture
+def client_registry_no_active(tmp_path: Path) -> Iterator[TestClient]:
+    """Registry YAML with zero active models — `/ready` must stay not_ready."""
+    reg_path = tmp_path / "registry.yaml"
+    reg_path.write_text(
+        """version: 1
+models:
+  - id: inactive-only
+    family: text
+    role: premium-text
+    runtime: vllm
+    active: false
+"""
+    )
+    settings = Settings(
+        sparky_api_key=TEST_API_KEY,
+        sparky_log_level="warning",
+        sparky_model_registry_path=reg_path,
+        sparky_logging_config_path=None,
+    )
+    app = create_app(settings)
+    with TestClient(app) as c:
+        yield c

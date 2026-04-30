@@ -1,4 +1,4 @@
-"""FastAPI app factory and module-level `app` for `uvicorn sparky_gateway.main:app`.
+"""FastAPI app factory — run with ``uvicorn --factory sparky_gateway.main:create_app``.
 
 See PLAN.md §12 for the gateway requirements and §5.1 for the Phase 3 route set.
 """
@@ -38,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     setup_logging(settings.sparky_logging_config_path, settings.sparky_log_level)
 
+    doc_urls = settings.sparky_enable_openapi_docs
     app = FastAPI(
         title="Sparky Gateway",
         version="0.1.0",
@@ -46,6 +47,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "machine). External callers reach Sparky through this gateway, never "
             "raw runtime ports. See PLAN.md §5 and config/api-contract.yaml."
         ),
+        docs_url="/docs" if doc_urls else None,
+        redoc_url="/redoc" if doc_urls else None,
+        openapi_url="/openapi.json" if doc_urls else None,
     )
     app.state.settings = settings
     app.state.registry = load_registry(settings.sparky_model_registry_path)
@@ -63,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RequestValidationError,
         errors.validation_exception_handler,
     )
+    app.add_exception_handler(Exception, errors.unhandled_exception_handler)
 
     app.include_router(health.router)
     app.include_router(models_routes.router)

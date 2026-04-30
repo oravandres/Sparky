@@ -1,6 +1,7 @@
 ---
 # Sparky Gateway compose unit — see PLAN.md §4.1 / §12.
-# Run with the env file mirrored from MiMi-Secrets:
+# Run with the env file mirrored from MiMi-Secrets (or a dev copy).
+# scripts/start-gateway.sh exports SPARKY_ENV_FILE so Compose substitutes the same path below.
 #
 #   docker compose --env-file /etc/sparky/sparky.env \
 #       -f docker/compose/docker-compose.gateway.yml up -d
@@ -19,7 +20,8 @@ services:
     container_name: sparky-gateway
     restart: unless-stopped
     env_file:
-      - /etc/sparky/sparky.env
+      # Honour SPARKY_ENV_FILE when exported (scripts/start-gateway.sh); default appliance path.
+      - ${SPARKY_ENV_FILE:-/etc/sparky/sparky.env}
     environment:
       # Container-side defaults; env_file values win when set.
       SPARKY_GATEWAY_BIND: 0.0.0.0:8080
