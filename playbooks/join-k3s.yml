@@ -15,18 +15,36 @@
         group: k3s
         state: present
 
-    # Replicate necessary variables from MiMi
+    # Replicate necessary variables from MiMi. Labels/taints follow PLAN.md §2.1 so only
+    # premium workloads tolerate the node; override `k3s_node_labels` / `k3s_node_taints`
+    # in inventory when MiMi expects a different topology.
     - name: Set K3s variables
       ansible.builtin.set_fact:
         k3s_version: "v1.29.0+k3s1"
         k3s_api_port: 6443
-        k3s_agent_args: []
-        k3s_node_labels: []
-        k3s_node_taints: []
+        k3s_node_labels:
+          - "node-role.mimi.local/sparky=true"
+          - "hardware.nvidia.com/dgx-spark=true"
+          - "workload.mimi.local/premium-ai=true"
+          - "kubernetes.io/arch=arm64"
+        k3s_node_taints:
+          - "workload.mimi.local/premium-ai=true:NoSchedule"
         k3s_install_script_path: /tmp/k3s-install-script.sh
         k3s_agent_service_name: k3s-agent
         k3s_binary_path: /usr/local/bin/k3s
         k3s_agent_ready_timeout: 300
+
+    - name: Compose k3s --node-label arguments
+      ansible.builtin.set_fact:
+        k3s_agent_label_args: "{{ k3s_node_labels | map('regex_replace', '^(.*)$', '--node-label \\1') | list }}"
+
+    - name: Compose k3s --node-taint arguments
+      ansible.builtin.set_fact:
+        k3s_agent_taint_args: "{{ k3s_node_taints | map('regex_replace', '^(.*)$', '--node-taint \\1') | list }}"
+
+    - name: Merge k3s agent install/exec args for INSTALL_K3S_EXEC
+      ansible.builtin.set_fact:
+        k3s_agent_args: "{{ k3s_agent_label_args + k3s_agent_taint_args }}"
 
     # DGX Spark is ARM64 (aarch64) — use the arm64 binary.
     # Pin checksum from https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/sha256sum-arm64.txt
