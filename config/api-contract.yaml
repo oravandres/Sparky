@@ -140,6 +140,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReasoningAnalyzeResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/reasoning/compare:
     post:
@@ -159,6 +162,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReasoningCompareResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/agentic-rag/plan:
     post:
@@ -430,6 +436,11 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: Upstream runtime returned an error or an invalid response envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
 
   requestBodies:
     RagPlanRequest:
@@ -597,13 +608,22 @@ components:
 
     ReasoningAnalyzeRequest:
       type: object
+      additionalProperties: false
       required: [task]
       properties:
-        task: { type: string }
-        context: { type: string }
+        task:
+          type: string
+          minLength: 1
+          maxLength: 48000
+        context:
+          type: string
+          maxLength: 120000
         criteria:
           type: array
-          items: { type: string }
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 4096
         output_style: { type: string, enum: [structured, prose, bulleted] }
         max_tokens:
           type: integer
@@ -624,55 +644,105 @@ components:
 
     ReasoningCompareRequest:
       type: object
+      additionalProperties: false
       required: [question, options, criteria]
       properties:
-        question: { type: string }
+        question:
+          type: string
+          minLength: 1
+          maxLength: 48000
         options:
           type: array
+          description: >
+            Each option uses a stable `id` that appears in downstream scores.
+            Duplicate `id` strings in this array must not be submitted; callers
+            receive HTTP 422.
+          minItems: 1
+          maxItems: 24
           items:
             type: object
+            additionalProperties: false
             required: [id, name]
             properties:
-              id: { type: string }
-              name: { type: string }
-              description: { type: string }
+              id:
+                type: string
+                minLength: 1
+                maxLength: 256
+              name:
+                type: string
+                minLength: 1
+                maxLength: 512
+              description:
+                type: string
+                maxLength: 8000
         criteria:
           type: array
+          description: >
+            Evaluation dimensions; each criterion has a stable `id` used in scores.
+            Duplicate `id` strings in this array must not be submitted; callers
+            receive HTTP 422.
+          minItems: 1
+          maxItems: 32
           items:
             type: object
+            additionalProperties: false
             required: [id, name]
             properties:
-              id: { type: string }
-              name: { type: string }
-              weight: { type: number, default: 1.0 }
+              id:
+                type: string
+                minLength: 1
+                maxLength: 256
+              name:
+                type: string
+                minLength: 1
+                maxLength: 512
+              weight:
+                type: number
+                minimum: 0
+                maximum: 100
+                default: 1.0
         constraints:
           type: array
-          items: { type: string }
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 4096
 
     ReasoningCompareResponse:
       type: object
+      additionalProperties: false
       required: [scores, totals, recommendation, confidence]
+      description: >
+        The gateway derives weighted totals from criterion weights and pairwise
+        scores (`score * weight` summed per option). Returned `totals` are
+        authoritative; model-emitted totals in the upstream payload are overwritten.
       properties:
         scores:
           type: array
           items:
             type: object
+            additionalProperties: false
             required: [option_id, criterion_id, score, rationale]
             properties:
               option_id: { type: string }
               criterion_id: { type: string }
-              score: { type: number }
+              score:
+                type: number
+                minimum: 0
+                maximum: 10
               rationale: { type: string }
         totals:
           type: array
           items:
             type: object
+            additionalProperties: false
             required: [option_id, weighted_total]
             properties:
               option_id: { type: string }
               weighted_total: { type: number }
         recommendation:
           type: object
+          additionalProperties: false
           required: [option_id, reasoning]
           properties:
             option_id: { type: string }
