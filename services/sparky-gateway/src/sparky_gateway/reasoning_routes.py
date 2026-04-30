@@ -107,7 +107,7 @@ class CompareScoreOut(BaseModel):
 
     option_id: str
     criterion_id: str
-    score: float
+    score: float = Field(ge=0.0, le=10.0)
     rationale: str
 
 
@@ -194,8 +194,10 @@ def _compare_system_prompt() -> str:
         '"recommendation" (object with option_id, reasoning, and optional caveats '
         "array of strings), "
         '"confidence" (high, medium, or low). '
-        "Scores are 0-10. Compute weighted_total using each criterion's weight "
-        "from the user payload."
+        "Scores must be numeric in [0, 10] for each option-criterion pair. "
+        "Include exactly one score entry for every requested option id and criterion id. "
+        "The gateway validates coverage and recomputes weighted_totals from scores "
+        "and criterion weights."
     )
 
 
@@ -317,9 +319,13 @@ async def _post_upstream_chat(
     return data
 
 
-def _parse_model_json(completion: dict[str, Any], rid: str | None) -> dict[str, Any]:
+def _parse_model_json(completion: dict[str, Any], rid: str | None, model_id: str) -> dict[str, Any]:
     raw = _openai_choice_text(completion)
     if raw is None:
+        log.warning(
+            "reasoning_model_empty_content",
+            extra={"request_id": rid, "model": model_id},
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=envelope(
@@ -331,6 +337,10 @@ def _parse_model_json(completion: dict[str, Any], rid: str | None) -> dict[str, 
     try:
         return json.loads(_strip_json_fences(raw))
     except json.JSONDecodeError:
+        log.warning(
+            "reasoning_model_invalid_json",
+            extra={"request_id": rid, "model": model_id, "error": "JSONDecodeError"},
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=envelope(
@@ -341,6 +351,115 @@ def _parse_model_json(completion: dict[str, Any], rid: str | None) -> dict[str, 
         ) from None
 
 
+def _finalize_compare_response(
+    body: ReasoningCompareRequestBody,
+    out: ReasoningCompareResponseBody,
+    *,
+    rid: str | None,
+    model_id: str,
+) -> ReasoningCompareResponseBody:
+    """Ensure scores reference the caller payload and totals match weights."""
+
+    opt_ids = {o.id for o in body.options}
+    crit_weights = {c.id: float(c.weight) for c in body.criteria}
+    expected_pairs = {(oid, cid) for oid in opt_ids for cid in crit_weights}
+
+    by_pair: dict[tuple[str, str], CompareScoreOut] = {}
+    for row in out.scores:
+        if row.option_id not in opt_ids or row.criterion_id not in crit_weights:
+            log.warning(
+                "reasoning_compare_unknown_ids",
+                extra={
+                    "request_id": rid,
+                    "model": model_id,
+                    "option_id": row.option_id,
+                    "criterion_id": row.criterion_id,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=envelope(
+                    "runtime_error",
+                    "text runtime emitted scores outside the supplied options or criteria",
+                    rid,
+                ),
+            )
+        key = (row.option_id, row.criterion_id)
+        if key in by_pair:
+            log.warning(
+                "reasoning_compare_duplicate_score",
+                extra={
+                    "request_id": rid,
+                    "model": model_id,
+                    "option_id": row.option_id,
+                    "criterion_id": row.criterion_id,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=envelope(
+                    "runtime_error",
+                    "text runtime emitted duplicate scores for an option–criterion pair",
+                    rid,
+                ),
+            )
+        by_pair[key] = row
+
+    if set(by_pair.keys()) != expected_pairs:
+        log.warning(
+            "reasoning_compare_incomplete_scores",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "expected_pairs": len(expected_pairs),
+                "received_pairs": len(by_pair),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=envelope(
+                "runtime_error",
+                "text runtime omitted scores for required option–criterion pairs",
+                rid,
+            ),
+        )
+
+    if out.recommendation.option_id not in opt_ids:
+        log.warning(
+            "reasoning_compare_bad_recommendation",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "option_id": out.recommendation.option_id,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=envelope(
+                "runtime_error",
+                "text runtime recommended an option id that was not in the request",
+                rid,
+            ),
+        )
+
+    totals_list = [
+        CompareTotalOut(
+            option_id=oid,
+            weighted_total=sum(
+                by_pair[(oid, cid)].score * crit_weights[cid] for cid in crit_weights
+            ),
+        )
+        for oid in sorted(opt_ids)
+    ]
+
+    return ReasoningCompareResponseBody(
+        scores=out.scores,
+        totals=totals_list,
+        recommendation=out.recommendation,
+        confidence=out.confidence,
+    )
+
+
 @router.post("/v1/reasoning/analyze", dependencies=[Depends(verify_api_key)])
 async def reasoning_analyze(
     request: Request,
@@ -349,20 +468,31 @@ async def reasoning_analyze(
     """Single-input deep analysis (PLAN §5.2.1)."""
     settings: Settings = request.app.state.settings
     rid = getattr(request.state, "request_id", None)
+    model_id = settings.sparky_reasoning_model_id
 
     completion = await _post_upstream_chat(
         request,
-        model_id=settings.sparky_reasoning_model_id,
+        model_id=model_id,
         system_prompt=_analyze_system_prompt(),
         user_content=_analyze_user_payload(body),
         max_tokens=body.max_tokens,
         temperature=settings.sparky_reasoning_temperature,
         rid=rid,
     )
-    parsed_obj = _parse_model_json(completion, rid)
+    parsed_obj = _parse_model_json(completion, rid, model_id)
     try:
         out = ReasoningAnalyzeResponseBody.model_validate(parsed_obj)
-    except ValidationError:
+    except ValidationError as exc:
+        log.warning(
+            "reasoning_model_schema_mismatch",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "endpoint": "analyze",
+                "error": exc.__class__.__name__,
+                "validation_errors": len(exc.errors()),
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=envelope(
@@ -382,21 +512,32 @@ async def reasoning_compare(
     """Side-by-side option comparison (PLAN §5.2.2)."""
     settings: Settings = request.app.state.settings
     rid = getattr(request.state, "request_id", None)
+    model_id = settings.sparky_reasoning_model_id
     mt = settings.sparky_reasoning_compare_max_tokens
 
     completion = await _post_upstream_chat(
         request,
-        model_id=settings.sparky_reasoning_model_id,
+        model_id=model_id,
         system_prompt=_compare_system_prompt(),
         user_content=_compare_user_payload(body),
         max_tokens=mt,
         temperature=settings.sparky_reasoning_temperature,
         rid=rid,
     )
-    parsed_obj = _parse_model_json(completion, rid)
+    parsed_obj = _parse_model_json(completion, rid, model_id)
     try:
         out = ReasoningCompareResponseBody.model_validate(parsed_obj)
-    except ValidationError:
+    except ValidationError as exc:
+        log.warning(
+            "reasoning_model_schema_mismatch",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "endpoint": "compare",
+                "error": exc.__class__.__name__,
+                "validation_errors": len(exc.errors()),
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=envelope(
@@ -405,4 +546,5 @@ async def reasoning_compare(
                 rid,
             ),
         ) from None
-    return JSONResponse(status_code=200, content=out.model_dump())
+    final_out = _finalize_compare_response(body, out, rid=rid, model_id=model_id)
+    return JSONResponse(status_code=200, content=final_out.model_dump())
