@@ -1,0 +1,5 @@
+---
+k3s_api_port: 6443
+k3s_install_script_path: /tmp/k3s-install-script.sh
+k3s_agent_service_name: k3s-agent
+k3s_agent_args: []

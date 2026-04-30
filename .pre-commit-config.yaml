@@ -44,12 +44,17 @@ repos:
     hooks:
       - id: ansible-lint
         files: ^(playbooks|roles)/.*\.(ya?ml)$
+        additional_dependencies:
+          # Match .github/workflows/ci.yml — avoids hook venv missing ansible-core internals.
+          - ansible-core>=2.17,<2.19
 
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.10.0
     hooks:
       - id: shellcheck
         args: ["-x"]
+        # Vendored upstream K3s installer — keep byte-stable; do not ShellCheck-fix here.
+        exclude: ^playbooks/files/k3s-install-get-k3s-io\.sh$
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.14.0

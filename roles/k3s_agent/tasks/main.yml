@@ -1,0 +1,15 @@
+---
+# Bundled fallback when ../MiMi/roles is absent (e.g. CI). ansible.cfg lists MiMi first so a
+# sibling checkout still wins when both define k3s_agent.
+
+- name: Install K3s agent via vendored install script (skip binary download)
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_install_script_path }}"
+      - agent
+    creates: "/etc/systemd/system/{{ k3s_agent_service_name }}.service"
+  environment:
+    INSTALL_K3S_SKIP_DOWNLOAD: "true"
+    K3S_URL: "https://{{ k3s_api_server }}:{{ k3s_api_port }}"
+    K3S_TOKEN: "{{ k3s_cluster_token }}"
+    INSTALL_K3S_EXEC: "{{ k3s_agent_args | join(' ') }}"

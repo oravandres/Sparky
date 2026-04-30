@@ -17,3 +17,7 @@ Update policy: when bumping `k3s_version` in the playbook, refresh this file fro
 the upstream URL in a controlled environment, verify SHA256/SHA1, update both
 digests in this table and the `checksum:` line in `join-k3s.yml`, and commit in
 the same PR as the version bump.
+
+ShellCheck in **pre-commit** skips this path (see `.pre-commit-config.yaml`): we keep the
+vendored bytes aligned with upstream rather than rewriting them for lint cleanliness.
+The standalone CI `shellcheck` job only scans `scripts/*.sh`.
