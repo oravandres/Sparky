@@ -3,6 +3,14 @@
   hosts: sparky
   gather_facts: true
   become: true
+  vars:
+    sparky_default_k3s_node_labels:
+      - "node-role.mimi.local/sparky=true"
+      - "hardware.nvidia.com/dgx-spark=true"
+      - "workload.mimi.local/premium-ai=true"
+      - "kubernetes.io/arch=arm64"
+    sparky_default_k3s_node_taints:
+      - "workload.mimi.local/premium-ai=true:NoSchedule"
   tasks:
     - name: Ensure k3s group exists
       ansible.builtin.group:
@@ -15,18 +23,35 @@
         group: k3s
         state: present
 
-    # Replicate necessary variables from MiMi
+    # Labels/taints follow PLAN.md §2.1. Inventory may set `k3s_node_labels` / `k3s_node_taints`;
+    # `default()` reads host vars first so set_fact does not clobber group_vars (review: PR #7).
     - name: Set K3s variables
       ansible.builtin.set_fact:
         k3s_version: "v1.29.0+k3s1"
         k3s_api_port: 6443
-        k3s_agent_args: []
-        k3s_node_labels: []
-        k3s_node_taints: []
+        k3s_node_labels: "{{ k3s_node_labels | default(sparky_default_k3s_node_labels, true) }}"
+        k3s_node_taints: "{{ k3s_node_taints | default(sparky_default_k3s_node_taints, true) }}"
         k3s_install_script_path: /tmp/k3s-install-script.sh
         k3s_agent_service_name: k3s-agent
         k3s_binary_path: /usr/local/bin/k3s
         k3s_agent_ready_timeout: 300
+
+    - name: Record Kubernetes node object name for API reconciliation
+      ansible.builtin.set_fact:
+        sparky_k8s_node_name: >-
+          {{ sparky_k8s_node_name | default(ansible_hostname | default(inventory_hostname), true) }}
+
+    - name: Compose k3s --node-label arguments
+      ansible.builtin.set_fact:
+        k3s_agent_label_args: "{{ k3s_node_labels | map('regex_replace', '^(.*)$', '--node-label \\1') | list }}"
+
+    - name: Compose k3s --node-taint arguments
+      ansible.builtin.set_fact:
+        k3s_agent_taint_args: "{{ k3s_node_taints | map('regex_replace', '^(.*)$', '--node-taint \\1') | list }}"
+
+    - name: Merge k3s agent install/exec args for INSTALL_K3S_EXEC
+      ansible.builtin.set_fact:
+        k3s_agent_args: "{{ k3s_agent_label_args + k3s_agent_taint_args }}"
 
     # DGX Spark is ARM64 (aarch64) — use the arm64 binary.
     # Pin checksum from https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/sha256sum-arm64.txt
@@ -67,3 +92,38 @@
     k3s_api_server: "pi-c1"
   roles:
     - role: k3s_agent
+
+- name: Reconcile Sparky node labels and taints via Kubernetes API
+  hosts: servers
+  gather_facts: false
+  become: true
+  vars:
+    sparky_inv_host: "{{ groups['sparky'][0] }}"
+  tasks:
+    # kubectl --overwrite reconciles desired state; Ansible change tracking is suppressed
+    # because return text differs by Kubernetes version (ansible-lint no-changed-when).
+    - name: Apply labels to Sparky node (idempotent)
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - label
+          - node
+          - "{{ hostvars[sparky_inv_host].sparky_k8s_node_name }}"
+          - "{{ item }}"
+          - "--overwrite"
+      loop: "{{ hostvars[sparky_inv_host].k3s_node_labels }}"
+      changed_when: false
+
+    - name: Apply taints to Sparky node (idempotent)
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - taint
+          - nodes
+          - "{{ hostvars[sparky_inv_host].sparky_k8s_node_name }}"
+          - "{{ item }}"
+          - "--overwrite"
+      loop: "{{ hostvars[sparky_inv_host].k3s_node_taints }}"
+      changed_when: false
