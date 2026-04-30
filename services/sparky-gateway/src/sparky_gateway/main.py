@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 
-from . import errors, health, metrics, models_routes
+from . import chat_routes, errors, health, metrics, models_routes
 from .config import Settings
 from .logging_setup import setup_logging
 from .registry import load_registry
@@ -71,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(models_routes.router)
+    app.include_router(chat_routes.router)
     app.include_router(metrics.router)
 
     log.info(
