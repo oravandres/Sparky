@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sparky-gateway"
+version = "0.1.0"
+description = "Authenticated internal API gateway for Sparky (PLAN.md §12)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<0.116",
+  "uvicorn[standard]>=0.32,<0.33",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6,<3",
+  "httpx>=0.27,<0.28",
+  "prometheus-client>=0.21,<0.22",
+  "PyYAML>=6.0,<7",
+  "python-json-logger>=2.0,<3",
+  "sparky-common>=0.1",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<0.25",
+  "httpx>=0.27,<0.28",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sparky_gateway = ["py.typed"]
+
+[tool.ruff]
+src = ["src", "tests"]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+show_error_codes = true
+packages = ["sparky_gateway"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = ["pythonjsonlogger.*", "prometheus_client.*", "yaml"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
