@@ -648,7 +648,11 @@ def _finalize_system_prompt(citation_style: str, fmt: str) -> str:
         f'format="{fmt}". Every citation marker in the final_answer (if '
         "citation_style is inline or footnote) must match one of the "
         "citations[].marker values, and every citation.source_id/chunk_id "
-        "pair must reference the supplied evidence_chunks."
+        "pair must reference the supplied evidence_chunks. "
+        'When citation_style="inline", use ONLY numeric markers like [1], '
+        "[2], etc., so they can be distinguished from Markdown links "
+        '"[text](url)" and other bracketed prose. When '
+        'citation_style="footnote", use the "[^n]" Markdown footnote form.'
     )
 
 
@@ -810,13 +814,22 @@ def _finalize_synthesize_response(
     return out
 
 
-# Marker extractors for the two cite-in-answer styles we generate (PLAN §6.11).
-# Kept narrow on purpose to avoid false-flagging incidental brackets like
-# "[TODO]" or "[1:1]" in prose. If the model uses a marker syntax outside
-# these conventions the body-text cross-check silently passes, which is
-# acceptable: the citations[].source_id/chunk_id validation still guards
-# the payload that downstream consumers render.
-_INLINE_MARKER_RE = re.compile(r"(?<!\\)\[(?!\^)([A-Za-z0-9_.\-]{1,32})\]")
+# Marker extractors for the two cite-in-answer styles Sparky owns (PLAN §6.11).
+#
+# Inline markers are restricted to the numeric form `[1]`, `[12]`, ... — the
+# convention the system prompt instructs the model to use. This is narrow on
+# purpose: `format="markdown"` answers commonly contain `[docs](url)` links,
+# `[TODO]` placeholders, or cross-references like `[section 2]`, and an
+# alphanumeric regex would false-positive on all of them. A follow-ups link
+# followed by `(` is also explicitly excluded via negative lookahead so that
+# Markdown link syntax `[text](url)` never matches even if "text" were digits.
+#
+# Footnote markers use the Markdown "[^n]" shape and tolerate alphanumeric
+# ids because that form is unambiguously a footnote.
+#
+# The citations[].source_id / chunk_id cross-check above is the authoritative
+# payload gate; this text-side check is a backstop for marker invention.
+_INLINE_MARKER_RE = re.compile(r"(?<!\\)\[(\d{1,32})\](?!\()")
 _FOOTNOTE_MARKER_RE = re.compile(r"(?<!\\)\[\^([A-Za-z0-9_.\-]{1,32})\]")
 
 

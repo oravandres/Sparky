@@ -503,6 +503,49 @@ def test_finalize_accepts_non_marker_brackets_when_citation_style_none(
     assert r.status_code == 200
 
 
+def test_finalize_inline_allows_markdown_links_and_prose_brackets(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Inline scanner is numeric-only; Markdown `[text](url)` must not 502."""
+    ok = dict(_FINALIZE_OK)
+    ok["final_answer"] = (
+        "Alpha is first [1]; see [docs](https://example.com/a) "
+        "and note [TODO] and [section 2]. Beta is second [2]."
+    )
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(ok))
+    r = client.post(
+        "/v1/agentic-rag/finalize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "draft_answer": "d",
+            "evidence_chunks": _EVIDENCE,
+            "citation_style": "inline",
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_finalize_inline_ignores_markdown_link_whose_text_is_numeric(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """`[9](url)` is a Markdown link, not an invented inline marker."""
+    ok = dict(_FINALIZE_OK)
+    ok["final_answer"] = "See [9](https://example.com/nine) and [1] and [2]."
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(ok))
+    r = client.post(
+        "/v1/agentic-rag/finalize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "draft_answer": "d",
+            "evidence_chunks": _EVIDENCE,
+            "citation_style": "inline",
+        },
+    )
+    assert r.status_code == 200
+
+
 def test_verify_502_when_ready_but_unsupported_claims_present(
     client: TestClient, auth_header: dict[str, str]
 ) -> None:
