@@ -50,6 +50,8 @@ repos:
     hooks:
       - id: shellcheck
         args: ["-x"]
+        # Vendored upstream K3s installer — keep byte-stable; do not ShellCheck-fix here.
+        exclude: ^playbooks/files/k3s-install-get-k3s-io\.sh$
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.14.0
