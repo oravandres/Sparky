@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,11 @@ class Settings(BaseSettings):
     sparky_gateway_bind: str = "0.0.0.0:8080"
     sparky_log_level: str = "info"
     sparky_request_timeout_seconds: int = 120
+    # Chat proxy — policy limits (PLAN §12, bounded generation in api-contract.yaml).
+    sparky_chat_max_messages: int = Field(default=64, ge=1, le=128)
+    sparky_chat_max_content_chars: int = Field(default=120_000, ge=1024, le=1_000_000)
+    sparky_nemotron_max_inflight: int = Field(default=2, ge=1, le=64)
+    sparky_max_request_body_bytes: int = Field(default=2_097_152, ge=64, le=16_777_216)
 
     nemotron_vllm_url: str = "http://127.0.0.1:8000"
     nemotron_trtllm_url: str = "http://127.0.0.1:8001"

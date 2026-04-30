@@ -5,22 +5,43 @@ See PLAN.md §12 for the gateway requirements and §5.1 for the Phase 3 route se
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 
-from . import errors, health, metrics, models_routes
+from . import chat_routes, errors, health, metrics, models_routes
 from .config import Settings
 from .logging_setup import setup_logging
 from .registry import load_registry
 from .request_id import RequestIdMiddleware
+from .request_limits import BodySizeLimitASGI
 
 log = logging.getLogger("sparky_gateway")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings: Settings = app.state.settings
+    limits = httpx.Limits(
+        max_connections=32,
+        max_keepalive_connections=max(4, settings.sparky_nemotron_max_inflight * 2),
+    )
+    timeout = httpx.Timeout(settings.sparky_request_timeout_seconds)
+    app.state.http_client = httpx.AsyncClient(limits=limits, timeout=timeout)
+    app.state.nemotron_sem = asyncio.Semaphore(settings.sparky_nemotron_max_inflight)
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
+
+
+def create_app(settings: Settings | None = None) -> BodySizeLimitASGI:
     """Build the FastAPI app.
 
     Refuses to boot without `SPARKY_API_KEY` (PLAN §10). The model registry
@@ -50,12 +71,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if doc_urls else None,
         redoc_url="/redoc" if doc_urls else None,
         openapi_url="/openapi.json" if doc_urls else None,
+        lifespan=_lifespan,
     )
     app.state.settings = settings
     app.state.registry = load_registry(settings.sparky_model_registry_path)
 
-    # Order matters: outermost middleware is added LAST. RequestId runs inner
-    # so the metrics span fully envelopes id assignment.
+    # Metrics outermost on the FastAPI stack; request id innermost. HTTP body size
+    # is capped above this stack via BodySizeLimitASGI (chunk-safe receive).
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(metrics.MetricsMiddleware)
 
@@ -71,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(models_routes.router)
+    app.include_router(chat_routes.router)
     app.include_router(metrics.router)
 
     log.info(
@@ -80,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "bind": settings.sparky_gateway_bind,
         },
     )
-    return app
+    return BodySizeLimitASGI(app, settings.sparky_max_request_body_bytes)
 
 
 # Run with uvicorn's factory mode so config validation happens at startup,
