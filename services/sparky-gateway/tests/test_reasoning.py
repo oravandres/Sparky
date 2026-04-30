@@ -135,9 +135,7 @@ def test_reasoning_compare_rejects_duplicate_criterion_ids(
     assert r.status_code == 422
 
 
-def test_finalize_compare_rejects_duplicate_option_ids_even_if_constructed_without_validation() -> (
-    None
-):
+def test_finalize_rejects_duplicate_option_ids_bypassing_validation() -> None:
     """Regression: finalize must not build the matrix from collapsed unique ids."""
     body = ReasoningCompareRequestBody.model_construct(
         question="?",
@@ -167,9 +165,7 @@ def test_finalize_compare_rejects_duplicate_option_ids_even_if_constructed_witho
     assert ei.value.detail["error"]["code"] == "invalid_request"
 
 
-def test_finalize_compare_rejects_duplicate_criterion_ids_even_if_constructed_without_validation() -> (
-    None
-):
+def test_finalize_rejects_duplicate_criterion_ids_bypassing_validation() -> None:
     body = ReasoningCompareRequestBody.model_construct(
         question="?",
         options=[CompareOptionIn.model_construct(id="o1", name="Opt")],
