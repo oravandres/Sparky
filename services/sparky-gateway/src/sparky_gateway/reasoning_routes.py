@@ -93,6 +93,22 @@ class ReasoningCompareRequestBody(BaseModel):
     )
     constraints: list[str] = Field(default_factory=list, max_length=_MAX_CONSTRAINTS)
 
+    @field_validator("options")
+    @classmethod
+    def _unique_option_ids(cls, v: list[CompareOptionIn]) -> list[CompareOptionIn]:
+        ids = [o.id for o in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("options must use unique id values within the request")
+        return v
+
+    @field_validator("criteria")
+    @classmethod
+    def _unique_criterion_ids(cls, v: list[CompareCriterionIn]) -> list[CompareCriterionIn]:
+        ids = [c.id for c in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("criteria must use unique id values within the request")
+        return v
+
     @field_validator("constraints")
     @classmethod
     def _constraints_items(cls, v: list[str]) -> list[str]:

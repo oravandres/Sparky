@@ -653,6 +653,10 @@ components:
           maxLength: 48000
         options:
           type: array
+          description: >
+            Each option uses a stable `id` that appears in downstream scores.
+            Duplicate `id` strings in this array must not be submitted; callers
+            receive HTTP 422.
           minItems: 1
           maxItems: 24
           items:
@@ -673,6 +677,10 @@ components:
                 maxLength: 8000
         criteria:
           type: array
+          description: >
+            Evaluation dimensions; each criterion has a stable `id` used in scores.
+            Duplicate `id` strings in this array must not be submitted; callers
+            receive HTTP 422.
           minItems: 1
           maxItems: 32
           items:

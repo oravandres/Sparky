@@ -87,6 +87,42 @@ def test_reasoning_compare_rejects_extra_fields(
     assert r.status_code == 422
 
 
+def test_reasoning_compare_rejects_duplicate_option_ids(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    r = client.post(
+        "/v1/reasoning/compare",
+        headers=auth_header,
+        json={
+            "question": "?",
+            "options": [
+                {"id": "same", "name": "First"},
+                {"id": "same", "name": "Second"},
+            ],
+            "criteria": [{"id": "c", "name": "X"}],
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_reasoning_compare_rejects_duplicate_criterion_ids(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    r = client.post(
+        "/v1/reasoning/compare",
+        headers=auth_header,
+        json={
+            "question": "?",
+            "options": [{"id": "o1", "name": "One"}],
+            "criteria": [
+                {"id": "cid", "name": "Cost", "weight": 1.0},
+                {"id": "cid", "name": "Also cost but different weight", "weight": 5.0},
+            ],
+        },
+    )
+    assert r.status_code == 422
+
+
 def test_reasoning_analyze_proxies_and_validates_json(
     client: TestClient, auth_header: dict[str, str]
 ) -> None:
