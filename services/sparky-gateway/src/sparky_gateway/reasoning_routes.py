@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -335,7 +335,7 @@ def _parse_model_json(completion: dict[str, Any], rid: str | None, model_id: str
             ),
         )
     try:
-        return json.loads(_strip_json_fences(raw))
+        loaded: Any = json.loads(_strip_json_fences(raw))
     except json.JSONDecodeError:
         log.warning(
             "reasoning_model_invalid_json",
@@ -349,6 +349,20 @@ def _parse_model_json(completion: dict[str, Any], rid: str | None, model_id: str
                 rid,
             ),
         ) from None
+    if not isinstance(loaded, dict):
+        log.warning(
+            "reasoning_model_json_not_object",
+            extra={"request_id": rid, "model": model_id, "error": "TypeError"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=envelope(
+                "runtime_error",
+                "text runtime returned JSON that is not an object",
+                rid,
+            ),
+        )
+    return cast(dict[str, Any], loaded)
 
 
 def _finalize_compare_response(
