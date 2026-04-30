@@ -42,6 +42,61 @@ GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
 
 Use `./scripts/check-gpu.sh --host-only` (or `SPARKY_GPU_CHECK_HOST_ONLY=1`) only when Docker or the NVIDIA Container Toolkit is intentionally absent; a full appliance install should pass the container probe.
 
+## Sparky Gateway (Phase 3 — PLAN §12)
+
+Local development:
+
+```bash
+pip install -e services/sparky-common
+pip install -e 'services/sparky-gateway[test]'
+
+export SPARKY_API_KEY="$(openssl rand -hex 32)"
+export SPARKY_MODEL_REGISTRY_PATH="$PWD/config/model-registry.yaml"
+export SPARKY_LOGGING_CONFIG_PATH="$PWD/config/logging.yaml"
+
+uvicorn --factory sparky_gateway.main:create_app --host 127.0.0.1 --port 8080
+```
+
+The `--factory` flag is required so `create_app()` runs once per worker
+and fails loudly when `SPARKY_API_KEY` is missing.
+
+### Containerized run
+
+```bash
+SPARKY_ENV_FILE=/etc/sparky/sparky.env ./scripts/start-gateway.sh up -d --build
+SPARKY_ENV_FILE=/etc/sparky/sparky.env ./scripts/start-gateway.sh logs -f
+```
+
+The compose unit at [`docker/compose/docker-compose.gateway.yml`](../docker/compose/docker-compose.gateway.yml)
+mounts `/opt/sparky/config` read-only into the container, runs as the
+unprivileged `sparky` user, drops all capabilities, and ships logs to
+`journald` with `tag=sparky-gateway`.
+
+### Smoke test
+
+```bash
+SPARKY_API_KEY=... SPARKY_GATEWAY_URL=http://127.0.0.1:8080 \
+  ./scripts/smoke-test-health.sh
+```
+
+Verifies `/health`, `/ready`, and that `/v1/models` is 401 unauthenticated /
+200 authenticated.
+
+### `/metrics` is authenticated
+
+Per `config/api-contract.yaml`, MiMi Prometheus must scrape Sparky with
+`Authorization: Bearer <SPARKY_API_KEY>` — bare scraping returns 401.
+Configure the scrape job to read the key from a file mirrored via
+sealed-secret:
+
+```yaml
+# (MiMi-side; lives in mimi-monitoring repo, not Sparky)
+- job_name: sparky-gateway
+  bearer_token_file: /etc/prometheus/secrets/sparky-api-key
+  static_configs:
+    - targets: ["sparky.mimi.local:8080"]
+```
+
 ## Hardware & storage (Phase 0 — preflight, PLAN §9)
 
 Before installs, run the host script (reports hostname, aarch64, RAM, block devices,
