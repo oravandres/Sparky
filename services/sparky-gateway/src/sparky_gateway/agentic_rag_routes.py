@@ -156,9 +156,9 @@ class RagEvaluateRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     question: str = Field(min_length=1, max_length=_MAX_QUESTION_CHARS)
-    evidence_chunks: list[EvidenceChunk] = Field(
-        default_factory=list, max_length=_MAX_EVIDENCE_CHUNKS
-    )
+    # Required — empty packs are a legitimate input, but an *omitted* field signals a
+    # caller bug and must 422 rather than silently fan out to Nemotron on zero evidence.
+    evidence_chunks: list[EvidenceChunk] = Field(..., max_length=_MAX_EVIDENCE_CHUNKS)
     required_facts: list[str] = Field(default_factory=list, max_length=_MAX_REQUIRED_FACTS)
 
 
@@ -193,7 +193,10 @@ class RagSynthesizeRequestBody(BaseModel):
     evidence_chunks: list[EvidenceChunk] = Field(min_length=1, max_length=_MAX_EVIDENCE_CHUNKS)
     answer_style: Literal["technical", "executive", "concise", "detailed"] | None = None
     require_citations: bool = True
-    max_tokens: int = Field(default=4096, ge=256, le=16384)
+    # Bounds match config/api-contract.yaml RagSynthesizeRequest.max_tokens (minimum 1).
+    # The handler clamps to SPARKY_AGENTIC_RAG_SYNTHESIZE_MAX_TOKENS so operators
+    # still own the upper ceiling without rejecting small values clients legitimately send.
+    max_tokens: int = Field(default=4096, ge=1, le=16384)
 
 
 class CitationOut(BaseModel):
@@ -718,18 +721,30 @@ def _finalize_plan_response(
             ),
         )
 
-    seen_rounds: set[int] = set()
-    for r in out.retrieval_rounds:
-        if r.round in seen_rounds:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=envelope(
-                    "runtime_error",
-                    "text runtime emitted duplicate round numbers",
-                    rid,
-                ),
-            )
-        seen_rounds.add(r.round)
+    # Round numbers must form a contiguous 1..n sequence. This rejects
+    # duplicates, gaps, misorderings, and single entries like {"round": 10}
+    # that slip past the len() cap. Downstream orchestrators iterate rounds
+    # in order; contiguous numbering is the contract.
+    actual_rounds = [r.round for r in out.retrieval_rounds]
+    expected_rounds = list(range(1, len(actual_rounds) + 1))
+    if actual_rounds != expected_rounds:
+        log.warning(
+            "agentic_rag_plan_rounds_non_contiguous",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "actual_rounds": actual_rounds,
+                "max_rounds": max_rounds,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=envelope(
+                "runtime_error",
+                "text runtime emitted retrieval rounds that are not 1..n in order",
+                rid,
+            ),
+        )
 
     return out
 
@@ -795,14 +810,27 @@ def _finalize_synthesize_response(
     return out
 
 
+# Marker extractors for the two cite-in-answer styles we generate (PLAN §6.11).
+# Kept narrow on purpose to avoid false-flagging incidental brackets like
+# "[TODO]" or "[1:1]" in prose. If the model uses a marker syntax outside
+# these conventions the body-text cross-check silently passes, which is
+# acceptable: the citations[].source_id/chunk_id validation still guards
+# the payload that downstream consumers render.
+_INLINE_MARKER_RE = re.compile(r"(?<!\\)\[(?!\^)([A-Za-z0-9_.\-]{1,32})\]")
+_FOOTNOTE_MARKER_RE = re.compile(r"(?<!\\)\[\^([A-Za-z0-9_.\-]{1,32})\]")
+
+
 def _finalize_finalize_response(
     body: RagFinalizeRequestBody,
     out: RagFinalizeResponseBody,
     *,
     rid: str | None,
     model_id: str,
+    effective_citation_style: str,
 ) -> RagFinalizeResponseBody:
-    """Final citations must reference supplied evidence; markers must be unique."""
+    """Final citations must reference supplied evidence; markers must be unique
+    and match any inline/footnote marker actually used in ``final_answer``.
+    """
     supplied = _chunk_index(body.evidence_chunks)
     bad = [c for c in out.citations if (c.source_id, c.chunk_id) not in supplied]
     if bad:
@@ -822,6 +850,7 @@ def _finalize_finalize_response(
                 rid,
             ),
         )
+
     markers = [c.marker for c in out.citations]
     if len(markers) != len(set(markers)):
         log.warning(
@@ -833,6 +862,73 @@ def _finalize_finalize_response(
             detail=envelope(
                 "runtime_error",
                 "text runtime reused citation markers in the final answer",
+                rid,
+            ),
+        )
+
+    # Cross-check inline/footnote markers that appear in the rendered answer
+    # against the declared citations set. Catches invented markers like
+    # `final_answer="... [9]"` when only `[1]` was declared.
+    if effective_citation_style in ("inline", "footnote"):
+        if effective_citation_style == "inline":
+            candidates = set(_INLINE_MARKER_RE.findall(out.final_answer))
+        else:
+            candidates = set(_FOOTNOTE_MARKER_RE.findall(out.final_answer))
+        declared = set(markers)
+        unknown = candidates - declared
+        if unknown:
+            log.warning(
+                "agentic_rag_finalize_unknown_marker_in_answer",
+                extra={
+                    "request_id": rid,
+                    "model": model_id,
+                    "citation_style": effective_citation_style,
+                    "unknown_count": len(unknown),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=envelope(
+                    "runtime_error",
+                    "text runtime used citation markers in final_answer that are "
+                    "not declared in citations[]",
+                    rid,
+                ),
+            )
+
+    return out
+
+
+def _finalize_verify_response(
+    out: RagVerifyResponseBody,
+    *,
+    rid: str | None,
+    model_id: str,
+) -> RagVerifyResponseBody:
+    """Reject logically inconsistent verify output.
+
+    `final_answer_ready=true` while either `unsupported_claims` or
+    `contradictions` is non-empty would let downstream callers ship an
+    answer Sparky just flagged as partially unsupported. That contradicts
+    the quality rule in PLAN §14 ("prefer 'insufficient evidence' over
+    guessing"). We return 502 so orchestrators can retry or fall back.
+    """
+    if out.final_answer_ready and (out.unsupported_claims or out.contradictions):
+        log.warning(
+            "agentic_rag_verify_inconsistent_ready_flag",
+            extra={
+                "request_id": rid,
+                "model": model_id,
+                "unsupported_claims": len(out.unsupported_claims),
+                "contradictions": len(out.contradictions),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=envelope(
+                "runtime_error",
+                "text runtime marked final_answer_ready=true while reporting "
+                "unsupported_claims or contradictions",
                 rid,
             ),
         )
@@ -965,7 +1061,8 @@ async def agentic_rag_verify(
         RagVerifyResponseBody,
         _validate_schema(RagVerifyResponseBody, parsed, rid=rid, model_id=model_id, stage="verify"),
     )
-    return JSONResponse(status_code=200, content=out.model_dump(exclude_none=True))
+    final = _finalize_verify_response(out, rid=rid, model_id=model_id)
+    return JSONResponse(status_code=200, content=final.model_dump(exclude_none=True))
 
 
 @router.post("/v1/agentic-rag/finalize", dependencies=[Depends(verify_api_key)])
@@ -977,13 +1074,15 @@ async def agentic_rag_finalize(
     settings: Settings = request.app.state.settings
     rid = getattr(request.state, "request_id", None)
     model_id = settings.sparky_agentic_rag_model_id
+    effective_citation_style = body.citation_style or "inline"
+    effective_format = body.format or "markdown"
 
     completion = await _post_upstream_chat(
         request,
         model_id=model_id,
         system_prompt=_finalize_system_prompt(
-            citation_style=body.citation_style or "inline",
-            fmt=body.format or "markdown",
+            citation_style=effective_citation_style,
+            fmt=effective_format,
         ),
         user_content=_finalize_user_payload(body),
         max_tokens=settings.sparky_agentic_rag_finalize_max_tokens,
@@ -998,5 +1097,11 @@ async def agentic_rag_finalize(
             RagFinalizeResponseBody, parsed, rid=rid, model_id=model_id, stage="finalize"
         ),
     )
-    final = _finalize_finalize_response(body, out, rid=rid, model_id=model_id)
+    final = _finalize_finalize_response(
+        body,
+        out,
+        rid=rid,
+        model_id=model_id,
+        effective_citation_style=effective_citation_style,
+    )
     return JSONResponse(status_code=200, content=final.model_dump(exclude_none=True))

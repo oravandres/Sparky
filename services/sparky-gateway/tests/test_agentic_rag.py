@@ -21,10 +21,12 @@ from sparky_gateway.agentic_rag_routes import (
     RagPlanResponseBody,
     RagSynthesizeRequestBody,
     RagSynthesizeResponseBody,
+    RagVerifyResponseBody,
     _finalize_evaluate_response,
     _finalize_finalize_response,
     _finalize_plan_response,
     _finalize_synthesize_response,
+    _finalize_verify_response,
 )
 from sparky_gateway.config import Settings
 from sparky_gateway.main import create_app
@@ -359,6 +361,195 @@ def test_finalize_502_when_citation_invented(
 
 
 # ---------------------------------------------------------------------------
+# PR feedback regressions
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_rejects_omitted_evidence_chunks(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Caller bug (missing field) must 422, not silently become an empty pack."""
+    r = client.post(
+        "/v1/agentic-rag/evaluate-evidence",
+        headers=auth_header,
+        json={"question": "q?"},
+    )
+    assert r.status_code == 422
+
+
+def test_evaluate_accepts_explicit_empty_evidence_chunks(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """An explicit empty pack is a legitimate input (e.g. "is retrieval needed?")."""
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(_EVAL_OK))
+    r = client.post(
+        "/v1/agentic-rag/evaluate-evidence",
+        headers=auth_header,
+        json={"question": "q?", "evidence_chunks": []},
+    )
+    assert r.status_code == 200
+
+
+def test_synthesize_accepts_max_tokens_below_256(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Contract (api-contract.yaml) advertises minimum=1; do not 422 on 128."""
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(_SYNTH_OK))
+    r = client.post(
+        "/v1/agentic-rag/synthesize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "evidence_chunks": _EVIDENCE,
+            "max_tokens": 128,
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_plan_502_when_single_round_value_exceeds_cap(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """A `{round: 10}` entry under max_retrieval_rounds=3 must be rejected."""
+    bad = dict(_PLAN_OK)
+    bad["retrieval_rounds"] = [
+        {"round": 10, "queries": ["q"], "tools": ["vector_search"]},
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/plan",
+        headers=auth_header,
+        json={"question": "q?", "constraints": {"max_retrieval_rounds": 3}},
+    )
+    assert r.status_code == 502
+
+
+def test_plan_502_when_rounds_have_gap(client: TestClient, auth_header: dict[str, str]) -> None:
+    """Rounds must form the contiguous sequence 1..n; [1, 3] is rejected."""
+    bad = dict(_PLAN_OK)
+    bad["retrieval_rounds"] = [
+        {"round": 1, "queries": ["q1"], "tools": ["vector_search"]},
+        {"round": 3, "queries": ["q3"], "tools": ["vector_search"]},
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/plan",
+        headers=auth_header,
+        json={"question": "q?", "constraints": {"max_retrieval_rounds": 3}},
+    )
+    assert r.status_code == 502
+
+
+def test_finalize_502_when_final_answer_uses_unknown_inline_marker(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """final_answer contains [9] but only [1] was declared → 502."""
+    bad = dict(_FINALIZE_OK)
+    bad["final_answer"] = "Alpha is first [9]; beta is second [2]."
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/finalize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "draft_answer": "d",
+            "evidence_chunks": _EVIDENCE,
+            "citation_style": "inline",
+        },
+    )
+    assert r.status_code == 502
+
+
+def test_finalize_502_when_final_answer_uses_unknown_footnote_marker(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    bad = dict(_FINALIZE_OK)
+    bad["citations"] = [
+        {"marker": "1", "source_id": "s1", "chunk_id": "c1", "claim": "A"},
+    ]
+    bad["final_answer"] = "Claim [^ghost]."
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/finalize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "draft_answer": "d",
+            "evidence_chunks": _EVIDENCE,
+            "citation_style": "footnote",
+        },
+    )
+    assert r.status_code == 502
+
+
+def test_finalize_accepts_non_marker_brackets_when_citation_style_none(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """`citation_style=none` → no scanning, `[TODO]` in prose is allowed."""
+    ok = dict(_FINALIZE_OK)
+    ok["final_answer"] = "Answer with [TODO] placeholder."
+    ok["citations"] = []
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(ok))
+    r = client.post(
+        "/v1/agentic-rag/finalize",
+        headers=auth_header,
+        json={
+            "question": "q?",
+            "draft_answer": "d",
+            "evidence_chunks": _EVIDENCE,
+            "citation_style": "none",
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_verify_502_when_ready_but_unsupported_claims_present(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """final_answer_ready=true must not coexist with non-empty unsupported_claims."""
+    bad = dict(_VERIFY_OK)
+    bad["unsupported_claims"] = ["Alpha is actually third."]
+    bad["final_answer_ready"] = True
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/verify",
+        headers=auth_header,
+        json={"answer": "Alpha is first.", "evidence_chunks": _EVIDENCE},
+    )
+    assert r.status_code == 502
+
+
+def test_verify_502_when_ready_but_contradictions_present(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    bad = dict(_VERIFY_OK)
+    bad["contradictions"] = ["c1 and c2 disagree."]
+    bad["final_answer_ready"] = True
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/agentic-rag/verify",
+        headers=auth_header,
+        json={"answer": "a", "evidence_chunks": _EVIDENCE},
+    )
+    assert r.status_code == 502
+
+
+def test_finalize_verify_helper_accepts_ready_when_all_supported() -> None:
+    """Direct helper call — keeps the invariant even if Pydantic is bypassed."""
+    out = RagVerifyResponseBody.model_validate(
+        {
+            "supported_claims": ["s"],
+            "unsupported_claims": [],
+            "contradictions": [],
+            "confidence": "high",
+            "final_answer_ready": True,
+        }
+    )
+    result = _finalize_verify_response(out, rid="r1", model_id="nemo")
+    assert result is out
+
+
+# ---------------------------------------------------------------------------
 # Upstream reachability
 # ---------------------------------------------------------------------------
 
@@ -483,5 +674,11 @@ def test_finalize_finalize_rejects_duplicate_markers() -> None:
         }
     )
     with pytest.raises(HTTPException) as ei:
-        _finalize_finalize_response(body, out, rid="r1", model_id="nemo")
+        _finalize_finalize_response(
+            body,
+            out,
+            rid="r1",
+            model_id="nemo",
+            effective_citation_style="inline",
+        )
     assert ei.value.status_code == 502
