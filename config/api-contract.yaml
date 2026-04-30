@@ -240,7 +240,10 @@ paths:
     post:
       tags: [coding]
       summary: Deep code review (PLAN §15)
-      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      description: >-
+        Accepts `task ∈ {review, debug}`. The caller must supply at least one of
+        `files`, `diff`, or `instructions`; requests with none return 422.
+      requestBody: { $ref: "#/components/requestBodies/CodingReviewRouteRequest" }
       responses:
         "200":
           description: Structured review
@@ -249,12 +252,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/CodingReviewResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/coding/architecture:
     post:
       tags: [coding]
       summary: Architecture review
-      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      description: >-
+        Accepts `task = architecture`. The caller must supply at least one of
+        `files`, `diff`, or `instructions`; requests with none return 422.
+      requestBody: { $ref: "#/components/requestBodies/CodingArchitectureRouteRequest" }
       responses:
         "200":
           description: Structured review
@@ -263,12 +272,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/CodingReviewResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/coding/refactor-plan:
     post:
       tags: [coding]
       summary: Refactor plan
-      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      description: >-
+        Accepts `task = refactor-plan`. The caller must supply at least one of
+        `files`, `diff`, or `instructions`; requests with none return 422.
+      requestBody: { $ref: "#/components/requestBodies/CodingRefactorPlanRouteRequest" }
       responses:
         "200":
           description: Structured plan
@@ -277,12 +292,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/CodingReviewResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/coding/security-review:
     post:
       tags: [coding]
       summary: Security review
-      requestBody: { $ref: "#/components/requestBodies/CodingReviewRequest" }
+      description: >-
+        Accepts `task = security-review`. The caller must supply at least one of
+        `files`, `diff`, or `instructions`; requests with none return 422.
+      requestBody: { $ref: "#/components/requestBodies/CodingSecurityReviewRouteRequest" }
       responses:
         "200":
           description: Structured review
@@ -291,6 +312,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/CodingReviewResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/media/image/jobs:
     post:
@@ -473,6 +497,26 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/CodingReviewRequest" }
+    CodingReviewRouteRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingReviewRouteRequest" }
+    CodingArchitectureRouteRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingArchitectureRouteRequest" }
+    CodingRefactorPlanRouteRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingRefactorPlanRouteRequest" }
+    CodingSecurityReviewRouteRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CodingSecurityReviewRouteRequest" }
 
   schemas:
     Health:
@@ -950,26 +994,106 @@ components:
 
     CodingReviewRequest:
       type: object
+      additionalProperties: false
+      description: >-
+        Shared base for the four /v1/coding/* routes (PLAN §15). Each route uses
+        its own request schema (CodingReviewRouteRequest, CodingArchitectureRouteRequest,
+        CodingRefactorPlanRouteRequest, CodingSecurityReviewRouteRequest) to narrow `task`
+        to the values that route accepts; sending a `task` outside that narrower
+        enum returns 422. The gateway also requires at least one of `files`,
+        `diff`, or `instructions` — see the per-route `anyOf` constraint.
       required: [task]
+      anyOf:
+        - required: [files]
+        - required: [diff]
+        - required: [instructions]
       properties:
         task:
           type: string
           enum: [review, architecture, debug, refactor-plan, security-review]
-        repository: { type: string }
+        repository:
+          type: string
+          maxLength: 512
         language:
           type: string
           enum: [go, typescript, python, yaml, mixed]
         files:
           type: array
+          maxItems: 256
+          description: >-
+            Repository snapshot for the reviewer. File paths must be unique
+            within a single request; duplicates return 422. `content` may be
+            the empty string so callers can include files like `__init__.py`
+            without special-casing.
           items:
             type: object
+            additionalProperties: false
             required: [path, content]
             properties:
-              path: { type: string }
-              content: { type: string }
-        diff: { type: string }
-        instructions: { type: string }
+              path:
+                type: string
+                minLength: 1
+                maxLength: 4096
+              content:
+                type: string
+                maxLength: 200000
+        diff:
+          type: string
+          maxLength: 500000
+        instructions:
+          type: string
+          maxLength: 16000
         max_tokens: { $ref: "#/components/schemas/BoundedGenerationTokens" }
+
+    CodingReviewRouteRequest:
+      description: >-
+        Request body accepted by `POST /v1/coding/review`. `task` must be one
+        of `review` or `debug` — `debug` is routed here because PLAN §15 lists
+        it as a task value but carves no dedicated endpoint. All other fields
+        mirror CodingReviewRequest.
+      allOf:
+        - $ref: "#/components/schemas/CodingReviewRequest"
+        - type: object
+          properties:
+            task:
+              type: string
+              enum: [review, debug]
+
+    CodingArchitectureRouteRequest:
+      description: >-
+        Request body accepted by `POST /v1/coding/architecture`. `task` must be
+        `architecture`.
+      allOf:
+        - $ref: "#/components/schemas/CodingReviewRequest"
+        - type: object
+          properties:
+            task:
+              type: string
+              enum: [architecture]
+
+    CodingRefactorPlanRouteRequest:
+      description: >-
+        Request body accepted by `POST /v1/coding/refactor-plan`. `task` must
+        be `refactor-plan`.
+      allOf:
+        - $ref: "#/components/schemas/CodingReviewRequest"
+        - type: object
+          properties:
+            task:
+              type: string
+              enum: [refactor-plan]
+
+    CodingSecurityReviewRouteRequest:
+      description: >-
+        Request body accepted by `POST /v1/coding/security-review`. `task` must
+        be `security-review`.
+      allOf:
+        - $ref: "#/components/schemas/CodingReviewRequest"
+        - type: object
+          properties:
+            task:
+              type: string
+              enum: [security-review]
 
     CodingReviewResponse:
       type: object

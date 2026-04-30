@@ -95,12 +95,21 @@ CodingLanguage = Literal["go", "typescript", "python", "yaml", "mixed"]
 
 
 class CodingFileIn(BaseModel):
-    """One file snapshot the reviewer should consider (PLAN §15)."""
+    """One file snapshot the reviewer should consider (PLAN §15).
+
+    ``content`` accepts the empty string so that valid repository snapshots
+    can include empty ``__init__.py``, ``.gitkeep``, or intentionally
+    truncated files without callers having to filter them out of the
+    request. The ``_require_something_to_review`` model validator still
+    rejects a request whose *only* signal is an empty file list, and the
+    line-count check in ``_finalize_coding_response`` treats zero-line
+    content as a one-line file.
+    """
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     path: str = Field(min_length=1, max_length=_MAX_PATH_CHARS)
-    content: str = Field(min_length=1, max_length=_MAX_FILE_CONTENT_CHARS)
+    content: str = Field(max_length=_MAX_FILE_CONTENT_CHARS)
 
 
 class CodingReviewRequestBody(BaseModel):

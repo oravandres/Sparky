@@ -461,6 +461,73 @@ def test_review_accepts_null_path_when_files_supplied(
     assert r.status_code == 200
 
 
+def test_review_accepts_empty_file_content(client: TestClient, auth_header: dict[str, str]) -> None:
+    """Empty `__init__.py` / `.gitkeep` files are legitimate snapshot entries."""
+    empty_files = [
+        {"path": "pkg/__init__.py", "content": ""},
+        {"path": ".gitkeep", "content": ""},
+    ]
+    ok = dict(_REVIEW_OK_NO_FILES)
+    ok["findings"] = []
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(ok))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "files": empty_files},
+    )
+    assert r.status_code == 200
+
+
+def test_review_line_one_valid_for_empty_file_content(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Empty content must be treated as a one-line file for the line bound."""
+    empty_files = [{"path": "empty.py", "content": ""}]
+    ok = dict(_REVIEW_OK_NO_FILES)
+    ok["findings"] = [
+        {
+            "severity": "nit",
+            "path": "empty.py",
+            "line": 1,
+            "title": "t",
+            "explanation": "e",
+            "recommendation": "r",
+        },
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(ok))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "files": empty_files},
+    )
+    assert r.status_code == 200
+
+
+def test_review_502_line_two_rejected_for_empty_file_content(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """Empty file content has no line 2; the gateway must still reject."""
+    empty_files = [{"path": "empty.py", "content": ""}]
+    bad = dict(_REVIEW_OK_NO_FILES)
+    bad["findings"] = [
+        {
+            "severity": "nit",
+            "path": "empty.py",
+            "line": 2,
+            "title": "t",
+            "explanation": "e",
+            "recommendation": "r",
+        },
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "files": empty_files},
+    )
+    assert r.status_code == 502
+
+
 # ---------------------------------------------------------------------------
 # Upstream reachability
 # ---------------------------------------------------------------------------

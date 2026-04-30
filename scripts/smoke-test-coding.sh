@@ -10,10 +10,11 @@
 #   5. POST /v1/coding/security-review   returns 200 for task=security-review
 #   6. Task/route mismatch               returns 422
 #
-# Requires `jq` in PATH. Requires the Nemotron text runtime to be reachable
-# from the gateway (raw 127.0.0.1:8000 per PLAN §4.1) or the calls will
-# return 503 `runtime_unavailable` — which is still a valid proxy signal
-# but not a green smoke-test.
+# Authenticated happy paths MUST reach the model runtime; if Nemotron is down
+# the gateway returns 503 runtime_unavailable and this smoke test FAILS. That
+# is intentional — the smoke test exists to catch broken end-to-end rollouts.
+#
+# Requires `jq` in PATH.
 #
 # Usage:
 #   SPARKY_API_KEY=... ./scripts/smoke-test-coding.sh
@@ -43,20 +44,39 @@ http_status() {
        "$@"
 }
 
-http_body() {
-  curl --silent --max-time 30 "$@"
-}
-
-post_json() {
+# Run an authenticated POST and set:
+#   _status — the HTTP status code
+#   _body   — the response body
+# Caller drives the assertions; treats any non-200 (503 runtime_unavailable
+# included) as failure so a broken rollout cannot masquerade as a green run.
+post_json_authed() {
   local path="$1"
   local data="$2"
-  shift 2
-  curl --silent --max-time 30 \
+  local tmp
+  tmp=$(mktemp)
+  _status=$(curl --silent --output "${tmp}" --max-time 30 \
+       --write-out '%{http_code}' \
        -H "Authorization: Bearer ${API_KEY}" \
        -H "Content-Type: application/json" \
        --data-raw "${data}" \
-       "$@" \
-       "${GATEWAY_URL}${path}"
+       "${GATEWAY_URL}${path}")
+  _body=$(cat "${tmp}")
+  rm -f "${tmp}"
+}
+
+assert_happy_path() {
+  local path="$1"
+  local data="$2"
+  post_json_authed "${path}" "${data}"
+  if [[ "${_status}" != "200" ]]; then
+    echo "  body: ${_body}"
+    fail "${path} = ${_status} (expected 200)"
+  fi
+  echo "${_body}" \
+    | jq -e '.summary and (.findings | type == "array") and .final_recommendation' \
+         >/dev/null \
+    || fail "${path} body missing required fields: ${_body}"
+  ok "${path} = 200 with structured body"
 }
 
 echo "→ ${GATEWAY_URL}"
@@ -79,16 +99,7 @@ review_body=$(cat <<'JSON'
 }
 JSON
 )
-body=$(post_json /v1/coding/review "${review_body}")
-code=$(echo "${body}" | jq -r '.error.code // empty')
-if [[ -n "${code}" ]]; then
-  echo "note: /v1/coding/review returned error envelope: ${code}"
-  echo "${body}"
-else
-  echo "${body}" | jq -e '.summary and .findings and .final_recommendation' >/dev/null \
-    || fail "/v1/coding/review body missing required fields: ${body}"
-  ok "/v1/coding/review = 200 with structured body"
-fi
+assert_happy_path /v1/coding/review "${review_body}"
 
 # 3. /v1/coding/architecture happy path
 arch_body=$(cat <<'JSON'
@@ -98,15 +109,7 @@ arch_body=$(cat <<'JSON'
 }
 JSON
 )
-body=$(post_json /v1/coding/architecture "${arch_body}")
-code=$(echo "${body}" | jq -r '.error.code // empty')
-if [[ -n "${code}" ]]; then
-  echo "note: /v1/coding/architecture returned error envelope: ${code}"
-else
-  echo "${body}" | jq -e '.summary and .final_recommendation' >/dev/null \
-    || fail "/v1/coding/architecture body missing required fields: ${body}"
-  ok "/v1/coding/architecture = 200"
-fi
+assert_happy_path /v1/coding/architecture "${arch_body}"
 
 # 4. /v1/coding/refactor-plan happy path
 refactor_body=$(cat <<'JSON'
@@ -116,15 +119,7 @@ refactor_body=$(cat <<'JSON'
 }
 JSON
 )
-body=$(post_json /v1/coding/refactor-plan "${refactor_body}")
-code=$(echo "${body}" | jq -r '.error.code // empty')
-if [[ -n "${code}" ]]; then
-  echo "note: /v1/coding/refactor-plan returned error envelope: ${code}"
-else
-  echo "${body}" | jq -e '.summary and .final_recommendation' >/dev/null \
-    || fail "/v1/coding/refactor-plan body missing required fields: ${body}"
-  ok "/v1/coding/refactor-plan = 200"
-fi
+assert_happy_path /v1/coding/refactor-plan "${refactor_body}"
 
 # 5. /v1/coding/security-review happy path
 security_body=$(cat <<'JSON'
@@ -134,15 +129,7 @@ security_body=$(cat <<'JSON'
 }
 JSON
 )
-body=$(post_json /v1/coding/security-review "${security_body}")
-code=$(echo "${body}" | jq -r '.error.code // empty')
-if [[ -n "${code}" ]]; then
-  echo "note: /v1/coding/security-review returned error envelope: ${code}"
-else
-  echo "${body}" | jq -e '.summary and .final_recommendation' >/dev/null \
-    || fail "/v1/coding/security-review body missing required fields: ${body}"
-  ok "/v1/coding/security-review = 200"
-fi
+assert_happy_path /v1/coding/security-review "${security_body}"
 
 # 6. Task / route mismatch
 status=$(http_status -X POST \
@@ -153,4 +140,4 @@ status=$(http_status -X POST \
 [[ "${status}" == "422" ]] || fail "task=architecture on /review = ${status} (expected 422)"
 ok "task=architecture on /review = 422"
 
-echo "OK — coding intelligence surface responded."
+echo "OK — coding intelligence surface is end-to-end healthy."
