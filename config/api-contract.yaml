@@ -140,6 +140,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReasoningAnalyzeResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/reasoning/compare:
     post:
@@ -159,6 +162,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReasoningCompareResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/agentic-rag/plan:
     post:
@@ -427,6 +433,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     UnprocessableEntity:
       description: Request failed schema or policy validation (bounds, URI allowlist, etc.)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: Upstream runtime returned an error or an invalid response envelope
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     sparky_chat_max_content_chars: int = Field(default=120_000, ge=1024, le=1_000_000)
     sparky_nemotron_max_inflight: int = Field(default=2, ge=1, le=64)
     sparky_max_request_body_bytes: int = Field(default=2_097_152, ge=64, le=16_777_216)
+    sparky_reasoning_model_id: str = "nemotron-3-super-120b-a12b-nvfp4"
+    sparky_reasoning_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    sparky_reasoning_compare_max_tokens: int = Field(default=4096, ge=256, le=16384)
 
     nemotron_vllm_url: str = "http://127.0.0.1:8000"
     nemotron_trtllm_url: str = "http://127.0.0.1:8001"
