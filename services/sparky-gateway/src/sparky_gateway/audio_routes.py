@@ -108,14 +108,18 @@ class AsrJobRequestBody(BaseModel):
                 "with no traversal (.., %2e%2e)"
             )
 
-        # Step 2: canonicalise. ``urlsplit`` already rejected the scheme via
-        # the regex but we re-parse so we operate on the percent-decoded
-        # path the worker will eventually open. Anything that survives must
-        # resolve under one of the allow-listed roots, otherwise we treat it
-        # as a path-injection attempt and fail closed.
+        # Step 2: canonicalise. The regex above already restricts the scheme
+        # to ``file:///`` (triple slash → empty authority); we re-parse so we
+        # operate on the percent-decoded path the worker will eventually
+        # open. The contract intentionally rejects ``file://localhost/…`` so
+        # there is exactly one canonical form on the wire — staying aligned
+        # with the OpenAPI ``pattern`` keeps generated clients honest.
         parsed = urlsplit(value)
-        if parsed.scheme != "file" or parsed.netloc not in ("", "localhost"):
-            raise ValueError("input_uri scheme must be file:// (no host)")
+        if parsed.scheme != "file" or parsed.netloc != "":
+            raise ValueError(
+                "input_uri scheme must be file:// with an empty authority "
+                "(use file:///data/…, not file://localhost/data/…)"
+            )
 
         decoded = unquote(parsed.path)
         try:

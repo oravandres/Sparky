@@ -86,9 +86,12 @@ path safety):
   roots `/data/outputs/` or `/data/models/`. Anything outside (e.g.
   `/etc/passwd`, `/data/cache/leak.wav`, `/opt/sparky/config/sparky.env`)
   is refused.
-- The URI scheme must be `file://` and the authority must be empty or
-  `localhost` — `file://attacker.example.com/data/outputs/x.wav` is
-  rejected even though the path component matches.
+- The URI scheme must be `file://` with an **empty authority**
+  (`file:///data/…`, the standard triple-slash form). Both
+  `file://localhost/data/outputs/x.wav` and
+  `file://attacker.example.com/data/outputs/x.wav` are rejected so
+  there is exactly one canonical form on the wire — the OpenAPI
+  `pattern` and the gateway agree.
 - `model` must be an *active* registry entry with role `premium-asr`
   using the audio runtime — sending a TTS model is rejected.
 

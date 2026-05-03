@@ -21,7 +21,7 @@ Every route below requires `Authorization: Bearer <SPARKY_API_KEY>`
 | POST   | `/v1/jobs/{job_id}/cancel`    | `200`   | §5.7, §18    |
 
 `/v1/jobs/*` are shared between media (image, video) and audio (tts,
-asr — landing in a follow-up PR). The persisted record carries a `type`
+asr — see [`audio.md`](audio.md)). The persisted record carries a `type`
 field so consumers branch on the job class without polling per-family
 endpoints.
 

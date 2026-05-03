@@ -320,7 +320,7 @@ def test_asr_job_rejects_non_file_scheme(client: TestClient, auth_header: dict[s
 
 
 def test_asr_job_rejects_remote_host(client: TestClient, auth_header: dict[str, str]) -> None:
-    """A `file://host/...` URI with a non-localhost authority is rejected.
+    """A `file://host/...` URI with a non-empty authority is rejected.
 
     The OpenAPI ECMA pattern already excludes this (`file:///` requires the
     triple-slash form), but we check the gateway re-rejects so a future
@@ -330,6 +330,21 @@ def test_asr_job_rejects_remote_host(client: TestClient, auth_header: dict[str, 
         "/v1/audio/asr/jobs",
         headers=auth_header,
         json=_asr_request(input_uri="file://attacker.example.com/data/outputs/x.wav"),
+    )
+    assert r.status_code == 422
+
+
+def test_asr_job_rejects_localhost_authority(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """`file://localhost/data/...` is rejected so there is exactly one
+    canonical form on the wire (`file:///data/...`). The OpenAPI pattern
+    excludes the localhost form and the gateway agrees — locking that in
+    here prevents a future contract relaxation from sneaking it back."""
+    r = client.post(
+        "/v1/audio/asr/jobs",
+        headers=auth_header,
+        json=_asr_request(input_uri="file://localhost/data/outputs/audio/sample.wav"),
     )
     assert r.status_code == 422
 
