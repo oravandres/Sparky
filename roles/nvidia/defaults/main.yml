@@ -1,0 +1,26 @@
+---
+# Phase 2 — NVIDIA validation defaults (PLAN §11).
+
+sparky_service_user: sparky
+sparky_service_group: sparky
+
+# CUDA image used for the in-container GPU probe. The default matches
+# scripts/check-gpu.sh; override on DGX Spark when CUDA 13 / Blackwell
+# requires a vendor-specific tag (set sparky_nvidia_cuda_image).
+sparky_nvidia_cuda_image: "nvidia/cuda:12.6.3-runtime-ubuntu22.04"
+
+# When true (default), runs the in-container GPU probe via
+# `docker run --rm --gpus all`. Operators on hosts where the container
+# probe is known-broken (e.g. driver/CUDA mismatch the vendor is fixing)
+# can set this to false to validate only the host nvidia-smi.
+sparky_nvidia_validate_container: true
+
+# When the container probe fails, treat it as fatal. Set false to capture
+# the diagnostic but proceed (developer-only escape hatch — production
+# Sparky must have a working in-container GPU).
+sparky_nvidia_container_failure_is_fatal: true
+
+# Where to persist the validation result so downstream playbooks (Phase 4
+# Nemotron, Phase 7 ComfyUI, Phase 8 audio) can decide whether GPU access
+# is ready. Read by /v1/models exposers later.
+sparky_nvidia_validation_path: /var/lib/sparky/nvidia-validation.json

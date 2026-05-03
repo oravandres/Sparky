@@ -1,0 +1,12 @@
+---
+# Phase 2 — NVIDIA host + in-container GPU validation (PLAN §11).
+#
+# Persists /var/lib/sparky/nvidia-validation.json so later phase playbooks
+# (Nemotron, ComfyUI, audio) can refuse to start when GPU access is broken.
+# Run 30-container-runtime.yml first; it laid down /var/lib/sparky.
+- name: Sparky Phase 2 — NVIDIA validation
+  hosts: sparky
+  gather_facts: true
+  become: true
+  roles:
+    - role: nvidia

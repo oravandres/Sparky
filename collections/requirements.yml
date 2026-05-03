@@ -5,3 +5,7 @@ collections:
   # Exact pin — bump intentionally when upgrading Ansible collections (PR review).
   - name: community.general
     version: "12.6.0"
+  # ansible.posix.mount drives /etc/fstab + mount in roles/storage when an
+  # operator opts into the single-NVMe bind-mount path (PLAN §8).
+  - name: ansible.posix
+    version: "2.0.0"

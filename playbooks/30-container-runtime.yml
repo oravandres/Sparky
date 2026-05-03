@@ -1,0 +1,12 @@
+---
+# Phase 2 — container runtime validation (PLAN §11).
+#
+# DGX Spark ships with Docker + NVIDIA Container Toolkit preinstalled.
+# This playbook only ASSERTS that surface; it never rebuilds it. Run
+# 40-nvidia-validation.yml after this to add the in-container GPU probe.
+- name: Sparky Phase 2 — container runtime
+  hosts: sparky
+  gather_facts: true
+  become: true
+  roles:
+    - role: containers

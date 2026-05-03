@@ -17,6 +17,20 @@ sparky_admin_user: andres
 
 # --- Storage mount discovered in preflight (PLAN.md §8) ---
 sparky_data_mount: /data
+# Single-NVMe DGX Spark setup — when the entire NVMe is mounted at `/`
+# and there is no separate /data partition, opt into the bind-mount
+# path so roles/storage can record a bind mount in /etc/fstab.
+# sparky_data_use_bind_mount: true
+# sparky_data_bind_source: /var/sparky-data
+
+# --- Phase 2 container runtime + NVIDIA validation (PLAN.md §11) ---
+# DGX Spark ships preconfigured. The role only validates and refuses
+# to (re)install the vendor stack. Override the CUDA image when DGX
+# Spark requires NVIDIA's vendor tag for the in-container probe.
+# sparky_containers_install_packages: false
+# sparky_nvidia_cuda_image: "nvidia/cuda:12.6.3-runtime-ubuntu22.04"
+# sparky_nvidia_validate_container: true
+# sparky_nvidia_container_failure_is_fatal: true
 
 # --- Phase 1 base OS / firewall (playbooks/10-base-os.yml) ---
 # Firewall defaults are OFF — enable only after setting real CIDRs below.

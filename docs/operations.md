@@ -18,29 +18,84 @@ push to `main`.
 
 ## Ansible (PLAN phases 0–2)
 
-Install collections once (required for `roles/base` UFW and timezone
-modules):
+Install collections once (required for `roles/base` UFW + timezone modules
+and `roles/storage` mount module):
 
 ```bash
 ansible-galaxy collection install -r collections/requirements.yml
 ```
 
 Typical sequence on the appliance (after copying `inventory/group_vars/sparky.yml.example`
-to a vault-managed `sparky.yml` if you use vault):
+to a vault-managed `sparky.yml` if you use vault). All `become: true` so
+run with `--ask-become-pass` or pre-configure NOPASSWD for the operator
+account:
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/00-preflight.yml
-ansible-playbook -i inventory/hosts.yml playbooks/10-base-os.yml
-ansible-playbook -i inventory/hosts.yml playbooks/20-storage.yml   # needs /data (or sparky_data_mount) present
+ansible-playbook -i inventory/hosts.yml playbooks/10-base-os.yml --ask-become-pass
+ansible-playbook -i inventory/hosts.yml playbooks/20-storage.yml --ask-become-pass
+ansible-playbook -i inventory/hosts.yml playbooks/30-container-runtime.yml --ask-become-pass
+ansible-playbook -i inventory/hosts.yml playbooks/40-nvidia-validation.yml --ask-become-pass
 ```
 
-GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
+### Single-NVMe DGX Spark (no separate `/data` partition)
+
+DGX Spark ships with the entire 4 TB NVMe as `/`. PLAN §8 explicitly
+allows this layout — set the bind-mount flags in
+`inventory/group_vars/sparky.yml` and `roles/storage` will create a
+`/var/sparky-data` directory on `/`, record a bind mount in `/etc/fstab`,
+and mount it as `/data` so the rest of the playbook tree treats it as
+a normal filesystem path:
+
+```yaml
+sparky_data_mount: /data
+sparky_data_use_bind_mount: true
+sparky_data_bind_source: /var/sparky-data
+```
+
+After this, `mountpoint -q /data` returns 0 (bind mounts are
+mountpoints) and `playbooks/20-storage.yml` builds the
+`models/cache/outputs` tree as usual. Don't enable this on appliances
+with a real separate NVMe — provide a real filesystem mount instead.
+
+### Phase 2 — container runtime + NVIDIA validation (PLAN §11)
+
+`playbooks/30-container-runtime.yml` validates that Docker, the Compose
+plugin, and the NVIDIA Container Toolkit are all present and meet the
+minimum versions the rest of the stack relies on
+(`docker>=24.0.0`, `compose>=2.20.0`, `nvidia-ctk>=1.14.0`). It writes
+`/var/lib/sparky/container-runtime.json` so later phase playbooks can
+read the resolved versions. The role refuses to (re)install the vendor
+stack — DGX Spark ships preconfigured.
+
+`playbooks/40-nvidia-validation.yml` runs `nvidia-smi` on the host and
+the equivalent inside `--gpus all` of `nvidia/cuda:12.6.3-runtime-ubuntu22.04`,
+then writes `/var/lib/sparky/nvidia-validation.json`. Override the CUDA
+image when DGX Spark needs the vendor's tag:
+
+```yaml
+sparky_nvidia_cuda_image: nvcr.io/nvidia/cuda:13.0.0-base-arm64v8   # example
+```
+
+Quick CLI alternative (same probes, no Ansible):
 
 ```bash
 ./scripts/check-gpu.sh
+./scripts/check-gpu.sh --host-only   # skip the container probe
+SPARKY_CUDA_IMAGE=nvcr.io/nvidia/cuda:13.0.0-base-arm64v8 ./scripts/check-gpu.sh
 ```
 
-Use `./scripts/check-gpu.sh --host-only` (or `SPARKY_GPU_CHECK_HOST_ONLY=1`) only when Docker or the NVIDIA Container Toolkit is intentionally absent; a full appliance install should pass the container probe.
+### Phase 2 — installing on a clean (non-DGX) host
+
+Sparky's `roles/containers` does not auto-install Docker / NVIDIA
+Container Toolkit — DGX Spark ships preconfigured and rebuilding the
+vendor stack is risky. On a non-DGX dev host, follow the upstream
+docs once and rerun the Phase 2 playbook:
+
+- Docker engine + Compose plugin: <https://docs.docker.com/engine/install/ubuntu/>
+- NVIDIA Container Toolkit: <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html>
+
+Then `nvidia-ctk runtime configure --runtime=docker && systemctl restart docker`.
 
 ## Sparky Gateway (Phase 3 — PLAN §12)
 
@@ -124,6 +179,25 @@ Recorded after Ansible Phase 1 lands (hostname IP DNS SSH etc.):
 - Unified memory available (target 128 GB).
 - NVMe mount path, total / free space (PLAN §3 storage budget:
   ≥ 600 GB free before full model pulls).
+
+### Recorded values — DGX Spark (sparky)
+
+Reference values from the production appliance (`hostname=sparky`,
+2026-05-03). Update in-place when hardware or driver versions change:
+
+| Property | Value |
+|----------|-------|
+| Architecture | `aarch64` (`arm64`) |
+| OS | Ubuntu 24.04.4 LTS |
+| Kernel | 6.17.0-1014-nvidia |
+| Hardware | MSI MS-C931 (DGX Spark / GB10 Grace Blackwell) |
+| Memory | 121 GiB unified, 15 GiB swap |
+| GPU | NVIDIA GB10, Driver 580.142, CUDA 13.0 |
+| Docker | 29.2.1 |
+| Docker Compose plugin | v5.0.2 |
+| NVIDIA Container Toolkit | 1.19.0 |
+| NVMe layout | single `nvme0n1p2` (3.7 TB, ext4) mounted at `/` |
+| `/data` strategy | bind-mount via `sparky_data_use_bind_mount=true` |
 
 ## Secrets (PLAN §10)
 

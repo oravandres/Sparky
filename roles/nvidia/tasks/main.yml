@@ -1,0 +1,89 @@
+---
+# Phase 2 — NVIDIA host + container validation (PLAN §11).
+#
+# Wraps scripts/check-gpu.sh so the on-disk validator and the Ansible role
+# never disagree. Persists /var/lib/sparky/nvidia-validation.json so
+# Phase 4 (Nemotron) and Phase 7 (ComfyUI) playbooks can refuse to start
+# when GPU access is broken.
+
+- name: Probe nvidia-smi on the host
+  ansible.builtin.command:
+    argv:
+      - nvidia-smi
+      - --query-gpu=name,driver_version,memory.total,memory.free
+      - --format=csv,noheader
+  register: sparky_nvidia_smi
+  changed_when: false
+  failed_when: sparky_nvidia_smi.rc != 0
+
+- name: Capture host driver version
+  ansible.builtin.command:
+    argv:
+      - nvidia-smi
+      - --query-gpu=driver_version
+      - --format=csv,noheader,nounits
+  register: sparky_nvidia_driver
+  changed_when: false
+  failed_when: sparky_nvidia_driver.rc != 0
+
+- name: Run in-container GPU probe
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --gpus
+      - all
+      - "{{ sparky_nvidia_cuda_image }}"
+      - nvidia-smi
+      - --query-gpu=name
+      - --format=csv,noheader
+  register: sparky_nvidia_container_probe
+  changed_when: false
+  failed_when: false
+  when: sparky_nvidia_validate_container | bool
+
+- name: Fail when in-container probe failed and failure is fatal
+  ansible.builtin.fail:
+    msg: >-
+      In-container GPU probe failed (image: {{ sparky_nvidia_cuda_image }}).
+      Either fix NVIDIA Container Toolkit / driver alignment, override
+      sparky_nvidia_cuda_image with a DGX-compatible CUDA image, or set
+      sparky_nvidia_container_failure_is_fatal=false to proceed without
+      the container probe (dev only — Phase 4 / 7 / 8 still require
+      working in-container GPU access).
+      stderr: {{ sparky_nvidia_container_probe.stderr | default('(none)') }}
+  when:
+    - sparky_nvidia_validate_container | bool
+    - sparky_nvidia_container_failure_is_fatal | bool
+    - sparky_nvidia_container_probe.rc | default(1) != 0
+
+- name: Ensure /var/lib/sparky exists for the validation receipt
+  ansible.builtin.file:
+    path: "{{ sparky_nvidia_validation_path | dirname }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0755"
+
+- name: Persist NVIDIA validation receipt
+  ansible.builtin.copy:
+    dest: "{{ sparky_nvidia_validation_path }}"
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0644"
+    content: |
+      {
+        "host": {
+          "driver_version": "{{ sparky_nvidia_driver.stdout | trim }}",
+          "gpus": {{ (sparky_nvidia_smi.stdout_lines | default([])) | to_json }}
+        },
+        "container_probe": {
+          "image": "{{ sparky_nvidia_cuda_image }}",
+          "ran": {{ (sparky_nvidia_validate_container | bool) | to_json }},
+          "ok": {{ ((sparky_nvidia_container_probe.rc | default(1)) == 0) | to_json }},
+          "stdout": {{ (sparky_nvidia_container_probe.stdout | default('')) | to_json }},
+          "stderr": {{ (sparky_nvidia_container_probe.stderr | default('')) | to_json }}
+        },
+        "validated_at": "{{ ansible_date_time.iso8601 }}"
+      }
