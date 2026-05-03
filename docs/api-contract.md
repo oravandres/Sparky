@@ -67,7 +67,9 @@ drift; PRs that change a route must update both files in the same change.
   — see [`agentic-rag.md`](agentic-rag.md).
 - Phase 6 (coding intelligence): `POST /v1/coding/{review,architecture,refactor-plan,security-review}`
   — see [`coding.md`](coding.md).
+- Phase 7 (media + shared job control): `POST /v1/media/{image,video}/jobs`,
+  `GET /v1/jobs/{job_id}`, `POST /v1/jobs/{job_id}/cancel`
+  — see [`media.md`](media.md). Audio (§17) lands in a follow-up PR.
 
-Media (§16), audio (§17), and job control (§18) land in their
-respective phase PRs (PLAN §25). Until then calls to unimplemented
-paths return `404` with the standard error envelope.
+Audio (§17) lands in its own phase PR (PLAN §25). Until then calls to
+unimplemented paths return `404` with the standard error envelope.

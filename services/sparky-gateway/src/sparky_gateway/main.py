@@ -21,11 +21,14 @@ from . import (
     coding_routes,
     errors,
     health,
+    jobs_routes,
+    media_routes,
     metrics,
     models_routes,
     reasoning_routes,
 )
 from .config import Settings
+from .job_store import JobStore
 from .logging_setup import setup_logging
 from .registry import load_registry
 from .request_id import RequestIdMiddleware
@@ -84,6 +87,7 @@ def create_app(settings: Settings | None = None) -> BodySizeLimitASGI:
     )
     app.state.settings = settings
     app.state.registry = load_registry(settings.sparky_model_registry_path)
+    app.state.job_store = JobStore(settings.jobs_dir)
 
     # Metrics outermost on the FastAPI stack; request id innermost. HTTP body size
     # is capped above this stack via BodySizeLimitASGI (chunk-safe receive).
@@ -106,6 +110,8 @@ def create_app(settings: Settings | None = None) -> BodySizeLimitASGI:
     app.include_router(reasoning_routes.router)
     app.include_router(agentic_rag_routes.router)
     app.include_router(coding_routes.router)
+    app.include_router(media_routes.router)
+    app.include_router(jobs_routes.router)
     app.include_router(metrics.router)
 
     log.info(

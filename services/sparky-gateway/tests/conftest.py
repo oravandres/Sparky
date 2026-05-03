@@ -22,12 +22,13 @@ TEST_API_KEY = "test-key-not-for-production-use-only"
 
 
 @pytest.fixture
-def settings() -> Settings:
+def settings(tmp_path: Path) -> Settings:
     return Settings(
         sparky_api_key=TEST_API_KEY,
         sparky_log_level="warning",
         sparky_model_registry_path=REGISTRY_PATH,
         sparky_logging_config_path=None,
+        jobs_dir=tmp_path / "jobs",
     )
 
 
@@ -62,6 +63,7 @@ models:
         sparky_log_level="warning",
         sparky_model_registry_path=reg_path,
         sparky_logging_config_path=None,
+        jobs_dir=tmp_path / "jobs",
     )
     app = create_app(settings)
     with TestClient(app) as c:
