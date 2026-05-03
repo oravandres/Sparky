@@ -377,6 +377,7 @@ paths:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/audio/asr/jobs:
     post:
@@ -397,6 +398,7 @@ paths:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/jobs/{job_id}:
     get:
@@ -1249,6 +1251,7 @@ components:
 
     TtsJobRequest:
       type: object
+      additionalProperties: false
       required: [model, text]
       properties:
         model:
@@ -1256,11 +1259,16 @@ components:
           enum: [qwen3-tts, voxcpm2]
         text:
           type: string
+          minLength: 1
           maxLength: 50000
         language:
           type: string
           enum: [en, et, multi]
-        voice: { type: string, default: default }
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: default
         style:
           type: string
           enum: [calm, professional, energetic, narration]
@@ -1268,6 +1276,7 @@ components:
 
     AsrJobRequest:
       type: object
+      additionalProperties: false
       required: [model, input_uri]
       properties:
         model:
@@ -1275,14 +1284,17 @@ components:
           enum: [qwen3-asr]
         input_uri:
           type: string
+          minLength: 1
           maxLength: 4096
           pattern: '^file:///data/(outputs|models)/(?!.*(\.\.|%2[eE]%2[eE]))[\w./-]+$'
           description: >
             Local Sparky paths only under `/data/outputs/` or `/data/models/`.
             Rejects `..` and literal `%2e%2e` / `%2E%2E`-style URL-encoded traversal
             without regex inline flags (OpenAPI 3.1 patterns use ECMA-262; avoids
-            `(?i)` for JS validators and codegen). Gateway must still canonicalize
-            paths before open (PLAN §17).
+            `(?i)` for JS validators and codegen). The gateway re-validates this
+            pattern, percent-decodes the path, and canonicalizes against the
+            allow-listed `/data/{outputs,models}/` roots before enqueue
+            (PLAN §17 + §10 path safety).
         language:
           type: string
           enum: [auto, en, et]
