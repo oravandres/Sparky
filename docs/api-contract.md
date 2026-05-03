@@ -69,7 +69,10 @@ drift; PRs that change a route must update both files in the same change.
   — see [`coding.md`](coding.md).
 - Phase 7 (media + shared job control): `POST /v1/media/{image,video}/jobs`,
   `GET /v1/jobs/{job_id}`, `POST /v1/jobs/{job_id}/cancel`
-  — see [`media.md`](media.md). Audio (§17) lands in a follow-up PR.
+  — see [`media.md`](media.md).
+- Phase 8 (audio): `POST /v1/audio/{tts,asr}/jobs` — see
+  [`audio.md`](audio.md). Reuses the shared `/v1/jobs/{job_id}` control
+  surface; the persisted record carries `type: tts | asr` so consumers
+  branch on the job class without a per-family polling endpoint.
 
-Audio (§17) lands in its own phase PR (PLAN §25). Until then calls to
-unimplemented paths return `404` with the standard error envelope.
+Calls to unimplemented paths return `404` with the standard error envelope.
