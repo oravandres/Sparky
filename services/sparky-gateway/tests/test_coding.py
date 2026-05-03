@@ -754,9 +754,9 @@ def test_contract_anyOf_requires_materially_non_empty_inputs(
     by_required = {tuple(b["required"]): b for b in branches}
 
     files_branch = by_required[("files",)]
-    assert files_branch["properties"]["files"]["minItems"] == 1, (
-        "files anyOf branch must require minItems: 1 to reject `files: []`"
-    )
+    assert (
+        files_branch["properties"]["files"]["minItems"] == 1
+    ), "files anyOf branch must require minItems: 1 to reject `files: []`"
 
     diff_branch = by_required[("diff",)]
     assert diff_branch["properties"]["diff"]["pattern"] == r"\S", (
