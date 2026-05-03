@@ -1,0 +1,112 @@
+---
+# Phase 2 — container runtime validation (PLAN §11).
+#
+# DGX Spark ships with Docker + NVIDIA Container Toolkit preinstalled.
+# This role asserts that surface; it never rewrites the vendor stack.
+# When sparky_containers_install_packages=true the role fails loudly with
+# operator instructions instead of running an untested install path —
+# DGX Spark installation is a hardware-vendor concern and has its own
+# documented procedure (see docs/operations.md).
+
+- name: Refuse to install Docker / NVIDIA Container Toolkit from this role
+  ansible.builtin.fail:
+    msg: >-
+      sparky_containers_install_packages=true is not supported. DGX Spark
+      ships with the NVIDIA-recommended container stack preinstalled; do
+      not rebuild it from Ansible. Follow docs/operations.md "Phase 2 —
+      installing on a clean (non-DGX) host" if you really need a manual
+      install on a different appliance.
+  when: sparky_containers_install_packages | bool
+
+- name: Probe docker
+  ansible.builtin.command:
+    argv:
+      - docker
+      - version
+      - --format
+      - "{{ '{{' }}.Server.Version{{ '}}' }}"
+  register: sparky_docker_version
+  changed_when: false
+  failed_when: sparky_docker_version.rc != 0
+
+- name: Probe docker compose plugin
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - version
+      - --short
+  register: sparky_docker_compose_version
+  changed_when: false
+  failed_when: sparky_docker_compose_version.rc != 0
+
+- name: Probe NVIDIA Container Toolkit
+  ansible.builtin.command:
+    argv:
+      - nvidia-ctk
+      - --version
+  register: sparky_nvidia_ctk_version
+  changed_when: false
+  failed_when: sparky_nvidia_ctk_version.rc != 0
+
+- name: Assert docker meets minimum version
+  ansible.builtin.assert:
+    that:
+      - sparky_docker_version.stdout is version(sparky_docker_min_version, '>=')
+    fail_msg: >-
+      docker {{ sparky_docker_version.stdout }} < {{ sparky_docker_min_version }}.
+      Sparky compose stacks require docker >= {{ sparky_docker_min_version }}
+      (PLAN §11). Upgrade or set sparky_containers_install_packages=true.
+    success_msg: "docker {{ sparky_docker_version.stdout }} OK"
+
+- name: Assert docker compose plugin meets minimum version
+  ansible.builtin.assert:
+    that:
+      - sparky_docker_compose_version.stdout is version(sparky_docker_compose_min_version, '>=')
+    fail_msg: >-
+      docker compose {{ sparky_docker_compose_version.stdout }}
+      < {{ sparky_docker_compose_min_version }} (PLAN §11).
+    success_msg: "docker compose {{ sparky_docker_compose_version.stdout }} OK"
+
+- name: Extract NVIDIA Container Toolkit version (CLI emits multi-line output)
+  ansible.builtin.set_fact:
+    sparky_nvidia_ctk_extracted: >-
+      {{ (sparky_nvidia_ctk_version.stdout
+          | regex_search('([0-9]+\\.[0-9]+\\.[0-9]+)', '\\1')
+          | default(['0.0.0'], true))[0] }}
+
+- name: Assert NVIDIA Container Toolkit meets minimum version
+  ansible.builtin.assert:
+    that:
+      - sparky_nvidia_ctk_extracted is version(sparky_nvidia_ctk_min_version, '>=')
+    fail_msg: >-
+      nvidia-ctk {{ sparky_nvidia_ctk_extracted }}
+      < {{ sparky_nvidia_ctk_min_version }} (PLAN §11). Reinstall NVIDIA
+      Container Toolkit or set sparky_containers_install_packages=true.
+    success_msg: "nvidia-ctk {{ sparky_nvidia_ctk_extracted }} OK"
+
+- name: Ensure docker group exists (apt installs it; verify here for non-apt installs)
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Add Sparky service user to docker group
+  ansible.builtin.user:
+    name: "{{ sparky_service_user }}"
+    groups: docker
+    append: true
+  when: sparky_containers_add_user_to_docker_group | bool
+
+- name: Capture container runtime fact for downstream roles
+  ansible.builtin.copy:
+    dest: /var/lib/sparky/container-runtime.json
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0644"
+    content: |
+      {
+        "docker": "{{ sparky_docker_version.stdout }}",
+        "docker_compose": "{{ sparky_docker_compose_version.stdout }}",
+        "nvidia_container_toolkit": "{{ sparky_nvidia_ctk_extracted }}",
+        "validated_at": "{{ ansible_date_time.iso8601 }}"
+      }

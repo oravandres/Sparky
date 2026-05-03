@@ -1,6 +1,35 @@
 ---
 # Create model / cache / output trees (PLAN §8, config/model-registry defaults).
 
+# Single-NVMe DGX Spark setup: prepare the bind-mount source and fstab entry
+# so the rest of the role can treat sparky_data_mount as a normal mountpoint.
+- name: Ensure bind-mount source directory exists
+  ansible.builtin.file:
+    path: "{{ sparky_data_bind_source }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0775"
+  when: sparky_data_use_bind_mount | bool
+
+- name: Ensure bind-mount target directory exists
+  ansible.builtin.file:
+    path: "{{ sparky_data_mount }}"
+    state: directory
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0775"
+  when: sparky_data_use_bind_mount | bool
+
+- name: Record the bind mount in /etc/fstab and mount it
+  ansible.posix.mount:
+    path: "{{ sparky_data_mount }}"
+    src: "{{ sparky_data_bind_source }}"
+    fstype: none
+    opts: "bind,x-systemd.requires=local-fs.target"
+    state: mounted
+  when: sparky_data_use_bind_mount | bool
+
 - name: Ensure data mount exists
   ansible.builtin.stat:
     path: "{{ sparky_data_mount }}"
@@ -9,11 +38,13 @@
 - name: Fail when data mount is missing
   ansible.builtin.fail:
     msg: >-
-      Mount {{ sparky_data_mount }} does not exist. Run preflight, attach NVMe,
-      then create the mount before playbooks/20-storage.yml.
+      Mount {{ sparky_data_mount }} does not exist. Either provide a real
+      filesystem mount (NVMe, RAID, etc.) or set sparky_data_use_bind_mount=true
+      with sparky_data_bind_source pointing at a directory on the root fs.
+      See PLAN §8 and inventory/group_vars/sparky.yml.example.
   when: not sparky_data_mount_stat.stat.exists | default(false)
 
-- name: Verify data path is a mount point (not only a directory on the OS disk)
+- name: Verify data path is a mount point (real filesystem or bind mount)
   ansible.builtin.command:
     argv:
       - mountpoint

@@ -91,14 +91,27 @@ fi
 echo ""
 echo "--- Data mount (${DATA_MOUNT}) ---"
 if [[ ! -d "$DATA_MOUNT" ]]; then
-  fail "directory missing: ${DATA_MOUNT}. Create or set SPARKY_DATA_MOUNT."
+  # On a single-NVMe DGX Spark the entire NVMe is the root partition and
+  # there is no separate /data filesystem. PLAN §8 explicitly allows this:
+  # roles/storage handles the bind-mount path when
+  # sparky_data_use_bind_mount=true. Hint at that here so operators don't
+  # think they hit a hard requirement for a separate filesystem.
+  fail "directory missing: ${DATA_MOUNT}. Either provide a real NVMe/data mount, or set SPARKY_DATA_USE_BIND_MOUNT=1 and rerun playbooks/20-storage.yml with sparky_data_use_bind_mount=true (single-NVMe path; PLAN §8)."
 fi
 pass "mount path exists"
+
+bind_source=""
+if command -v findmnt >/dev/null 2>&1; then
+  bind_source="$(findmnt -no SOURCE,FSROOT --target "$DATA_MOUNT" 2>/dev/null | tail -n 1 || true)"
+  if [[ -n "${bind_source}" ]]; then
+    echo "data_mount_source: ${bind_source}"
+  fi
+fi
 
 if [[ "${QUICK}" -eq 0 ]]; then
   if command -v mountpoint >/dev/null 2>&1; then
     if ! mountpoint -q "$DATA_MOUNT"; then
-      fail "${DATA_MOUNT} is not a mountpoint — use the dedicated NVMe/data filesystem (PLAN §8). Try mountpoint -v \"${DATA_MOUNT}\"."
+      fail "${DATA_MOUNT} is not a mountpoint — use the dedicated NVMe/data filesystem, or run roles/storage with sparky_data_use_bind_mount=true on a single-NVMe DGX Spark (PLAN §8). Try mountpoint -v \"${DATA_MOUNT}\"."
     fi
     pass "${DATA_MOUNT} is a mountpoint"
   elif command -v findmnt >/dev/null 2>&1; then

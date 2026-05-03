@@ -4,3 +4,17 @@
 sparky_service_group: sparky
 sparky_service_user: sparky
 sparky_data_mount: /data
+
+# Bind-mount path for single-NVMe DGX Sparks where the entire NVMe is `/`
+# and there is no separate data partition (PLAN §8 explicitly allows this:
+# "If Sparky already uses another data mount, update configuration rather
+# than hardcoding /data."). When sparky_data_use_bind_mount is true, the
+# role:
+#   1. ensures sparky_data_bind_source exists on the root filesystem,
+#   2. records a bind mount in /etc/fstab for sparky_data_mount,
+#   3. mounts it.
+# `mountpoint -q` recognises bind mounts, so the rest of the role
+# (mountpoint check + tier directory creation) is unchanged.
+sparky_data_use_bind_mount: false
+sparky_data_bind_source: /var/sparky-data
+sparky_data_bind_fstab_owner: ansible-roles-storage

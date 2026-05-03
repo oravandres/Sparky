@@ -1,0 +1,28 @@
+---
+# Phase 2 — container runtime defaults (PLAN §11).
+#
+# This role validates that Docker, Docker Compose, and the NVIDIA Container
+# Toolkit are present and usable. It does NOT install Docker on a clean
+# machine by default — DGX Spark ships with the NVIDIA-recommended Docker
+# stack already, and rebuilding it is a hardware vendor concern. Operators
+# can opt into installation by setting sparky_containers_install_packages=true
+# (see tasks/install.yml — kept thin and explicit).
+
+sparky_service_user: sparky
+sparky_service_group: sparky
+
+# Minimum versions Sparky's compose stacks rely on. Bump intentionally; the
+# role only logs the version, never auto-upgrades.
+sparky_docker_min_version: "24.0.0"
+sparky_docker_compose_min_version: "2.20.0"
+sparky_nvidia_ctk_min_version: "1.14.0"
+
+# When false (default), the role only validates and fails loudly if Docker
+# or NVIDIA Container Toolkit are missing. When true, it installs the
+# upstream Docker apt repository, the engine, and the NVIDIA Container
+# Toolkit. Use only on clean appliances; DGX Spark ships preconfigured.
+sparky_containers_install_packages: false
+
+# Membership in the docker group is required for the gateway / worker users
+# to run containers without sudo. Idempotent — only changes when missing.
+sparky_containers_add_user_to_docker_group: true
