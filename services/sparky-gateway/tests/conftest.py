@@ -23,12 +23,17 @@ TEST_API_KEY = "test-key-not-for-production-use-only"
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
+    # Pre-create the jobs ledger so /ready stays green for happy-path tests;
+    # individual tests that exercise the unwritable path (PLAN §10 read-only
+    # rootfs / missing bind mount) override this in-test.
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
     return Settings(
         sparky_api_key=TEST_API_KEY,
         sparky_log_level="warning",
         sparky_model_registry_path=REGISTRY_PATH,
         sparky_logging_config_path=None,
-        jobs_dir=tmp_path / "jobs",
+        jobs_dir=jobs_dir,
     )
 
 
@@ -58,12 +63,14 @@ models:
     active: false
 """
     )
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
     settings = Settings(
         sparky_api_key=TEST_API_KEY,
         sparky_log_level="warning",
         sparky_model_registry_path=reg_path,
         sparky_logging_config_path=None,
-        jobs_dir=tmp_path / "jobs",
+        jobs_dir=jobs_dir,
     )
     app = create_app(settings)
     with TestClient(app) as c:

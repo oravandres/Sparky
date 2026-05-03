@@ -106,11 +106,20 @@ class JobConflictError(RuntimeError):
 
 
 class JobStore:
-    """Single-node, async-friendly file-backed job registry."""
+    """Single-node, async-friendly file-backed job registry.
+
+    Construction is deliberately FS-light: we record the configured path but
+    do **not** create it. The deployed gateway runs read-only and only mounts
+    the directories it owns (PLAN §10 / docker-compose.gateway.yml), so a
+    missing or non-writable ``jobs_dir`` must not crash boot — health probes
+    keep working and submission surfaces a clean 500 with the redacted
+    operator hint instead. The dir is created lazily on the first ``create``
+    call (idempotent ``mkdir(..., exist_ok=True)``) and ``readiness`` reports
+    its state via :meth:`is_writable`.
+    """
 
     def __init__(self, jobs_dir: Path | str) -> None:
         self._dir = Path(jobs_dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
         # One lock per job_id keeps cancel + worker-update (future) serialised
         # within a single process. Cross-process safety relies on os.replace
         # being atomic on POSIX, which is what the worker also uses.
@@ -120,6 +129,31 @@ class JobStore:
     @property
     def jobs_dir(self) -> Path:
         return self._dir
+
+    def is_writable(self) -> bool:
+        """Cheap readiness probe — true iff the dir exists and we can write."""
+        try:
+            return self._dir.is_dir() and os.access(self._dir, os.W_OK)
+        except OSError:
+            return False
+
+    def _ensure_dir(self) -> None:
+        """Create ``jobs_dir`` on first write; raise a redacted ``OSError``
+        with the configured path on permission failures so operators can
+        diagnose the missing bind mount without leaking arbitrary detail
+        through stack traces.
+        """
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as exc:
+            log.error(
+                "jobs_dir_unwritable",
+                extra={"jobs_dir": str(self._dir), "error": type(exc).__name__},
+            )
+            raise OSError(
+                f"jobs_dir {self._dir!s} is not writable; mount a writable volume "
+                "(see PLAN §8 host paths and docker-compose.gateway.yml)"
+            ) from exc
 
     def _path_for(self, job_id: str) -> Path:
         return self._dir / f"{_safe_job_id(job_id)}.json"
@@ -136,7 +170,10 @@ class JobStore:
         """Write ``payload`` as JSON to ``path`` atomically (tempfile + replace).
 
         ``os.replace`` is atomic across the same filesystem, so a reader that
-        opens ``path`` always sees a fully-written record.
+        opens ``path`` always sees a fully-written record. Callers MUST have
+        called :meth:`_ensure_dir` (or otherwise know the dir exists) before
+        invoking this — for create / cancel we route through ``_ensure_dir``
+        first so the lazy provisioning in production is honoured.
         """
         # tempfile in the same directory ensures we stay on one fs for replace.
         fd, tmp_name = tempfile.mkstemp(prefix=path.stem + ".", suffix=".tmp", dir=str(self._dir))
@@ -171,6 +208,10 @@ class JobStore:
             created_at=_now_iso(),
             request=dict(request),
         )
+        # Lazy provisioning: gateway boot must succeed even when the host has
+        # not yet bind-mounted a writable jobs_dir. The first submission is
+        # the natural place to surface the misconfiguration.
+        self._ensure_dir()
         path = self._path_for(record.job_id)
         # Brand-new id — collision is astronomically unlikely with uuid4 but
         # we still guard so a freak duplicate fails loudly instead of
@@ -223,6 +264,9 @@ class JobStore:
                     "completed_at": _now_iso(),
                 }
             )
+            # The dir already exists (we just read from it); ensure_dir is a
+            # no-op but keeps the write path symmetric with create().
+            self._ensure_dir()
             self._atomic_write(
                 self._path_for(record.job_id),
                 updated.model_dump(exclude_none=False),

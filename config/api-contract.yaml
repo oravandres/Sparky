@@ -335,6 +335,7 @@ paths:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/media/video/jobs:
     post:
@@ -355,6 +356,7 @@ paths:
                 $ref: "#/components/schemas/JobAccepted"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
   /v1/audio/tts/jobs:
     post:
@@ -412,12 +414,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/jobs/{job_id}/cancel:
     post:
       tags: [jobs]
       summary: Cancel a running job (PLAN §18)
+      description: >-
+        Cancels a non-terminal job. Already-cancelled jobs return 200
+        (idempotent). Cancelling a `completed` or `failed` job returns
+        `409 job_terminal` so callers distinguish "already done" from
+        "not found".
       parameters:
         - name: job_id
           in: path
@@ -425,12 +433,14 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Job cancellation accepted
+          description: Job cancellation accepted (idempotent against `cancelled`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
 components:
   securitySchemes:
@@ -447,6 +457,15 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: >-
+        Operation conflicts with the current resource state. For job control
+        the only conflict is cancelling a job that already reached a terminal
+        status (`completed` or `failed`); cancelling an already-cancelled job
+        is idempotent and returns 200.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

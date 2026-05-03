@@ -272,3 +272,44 @@ def test_contract_job_accepted_status_is_queued_only() -> None:
     contract = yaml.safe_load(API_CONTRACT_PATH.read_text())
     accepted = contract["components"]["schemas"]["JobAccepted"]
     assert accepted["properties"]["status"]["enum"] == ["queued"]
+
+
+def test_contract_media_routes_advertise_503() -> None:
+    """A misconfigured jobs_dir yields a stable 503 envelope; the contract
+    must list it so generated clients backoff instead of treating the
+    response as an unknown failure."""
+    contract = yaml.safe_load(API_CONTRACT_PATH.read_text())
+    for path in ("/v1/media/image/jobs", "/v1/media/video/jobs"):
+        responses = contract["paths"][path]["post"]["responses"]
+        assert "503" in responses, f"{path} missing 503 in contract"
+
+
+# ---------------------------------------------------------------------------
+# Jobs-dir misconfiguration — read-only host, no bind mount
+# ---------------------------------------------------------------------------
+
+
+def test_image_job_returns_503_when_jobs_dir_unwritable(
+    client: TestClient, auth_header: dict[str, str], tmp_path: Path
+) -> None:
+    """Mirrors the deployed read-only container with no jobs volume mount:
+    submission returns 503 with a clean envelope instead of a 500."""
+    parent = tmp_path / "ro"
+    parent.mkdir()
+    parent.chmod(0o500)
+    try:
+        # Swap the live store for one pointing at the read-only path.
+        from sparky_gateway.job_store import JobStore
+
+        client.app.state.job_store = JobStore(parent / "jobs")
+        r = client.post(
+            "/v1/media/image/jobs",
+            headers=auth_header,
+            json={"model": "flux2-dev", "prompt": "x"},
+        )
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "jobs_dir_unavailable"
+        # No PII / FS path leakage in the message.
+        assert "ro/jobs" not in r.json()["error"]["message"]
+    finally:
+        parent.chmod(0o700)

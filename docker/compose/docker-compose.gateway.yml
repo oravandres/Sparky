@@ -28,6 +28,12 @@ services:
     volumes:
       - /opt/sparky/config:/opt/sparky/config:ro
       - /var/log/sparky/sparky-gateway:/var/log/sparky/sparky-gateway
+      # PLAN §8 + §18: file-backed job ledger. The host path is provisioned
+      # by roles/base (sparky:sparky, mode 0750). Read-write so the gateway
+      # can persist queued jobs and the worker can update them in place.
+      # When the gateway runs read-only without this mount, JobStore falls
+      # back to a 503 on submit and /ready reports the misconfiguration.
+      - /var/lib/sparky/jobs:/var/lib/sparky/jobs
     ports:
       - "8080:8080"
     logging:

@@ -214,12 +214,54 @@ async def test_create_fails_loudly_on_id_collision(tmp_path: Path, monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_jobs_dir_is_created_if_missing(tmp_path: Path) -> None:
+async def test_init_does_not_touch_filesystem(tmp_path: Path) -> None:
+    """Boot must not depend on jobs_dir existing or being writable —
+    deployed gateway runs read-only with the dir bind-mounted, and a
+    misconfigured deployment must still pass /health (PLAN §10)."""
     target = tmp_path / "nested" / "jobs"
     assert not target.exists()
     store = JobStore(target)
-    assert target.exists()
+    assert not target.exists()
     assert store.jobs_dir == target
+    assert not store.is_writable()
+
+
+@pytest.mark.asyncio
+async def test_jobs_dir_is_created_lazily_on_first_create(tmp_path: Path) -> None:
+    """The first ``create`` provisions the dir; the second one is a no-op."""
+    target = tmp_path / "nested" / "jobs"
+    store = JobStore(target)
+    record = await store.create(job_type="image", model="flux2-dev", request={})
+    assert target.exists()
+    assert store.is_writable()
+    assert (target / f"{record.job_id}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_create_surfaces_redacted_oserror_when_dir_unwritable(
+    tmp_path: Path,
+) -> None:
+    """A read-only parent (mirrors the production read-only rootfs) yields a
+    redacted ``OSError`` instead of a raw ``PermissionError`` stack trace —
+    callers / handlers can map this to a stable 503 envelope."""
+    parent = tmp_path / "ro"
+    parent.mkdir()
+    parent.chmod(0o500)
+    try:
+        store = JobStore(parent / "jobs")
+        with pytest.raises(OSError, match="not writable"):
+            await store.create(job_type="image", model="flux2-dev", request={})
+    finally:
+        parent.chmod(0o700)  # so pytest cleanup can rm -rf
+
+
+@pytest.mark.asyncio
+async def test_is_writable_reports_dir_state(tmp_path: Path) -> None:
+    target = tmp_path / "jobs"
+    store = JobStore(target)
+    assert not store.is_writable()
+    target.mkdir()
+    assert store.is_writable()
 
 
 def test_corrupt_record_raises_on_get(tmp_path: Path) -> None:

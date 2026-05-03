@@ -138,6 +138,30 @@ record. Single-node only; multi-node scheduling stays with MiMi
 validate the path component before opening files — values like
 `../etc/passwd` short-circuit to **404** instead of touching disk.
 
+### Provisioning + boot resilience
+
+The deployed gateway runs read-only with a non-root user (PLAN §10,
+`docker-compose.gateway.yml`), so the host **must** bind-mount a
+writable jobs directory. The Ansible base role
+([`roles/base/tasks/main.yml`](../roles/base/tasks/main.yml)) creates
+`/var/lib/sparky/jobs` as `sparky:sparky` mode `0750`; the compose
+service mounts it back in:
+
+```yaml
+volumes:
+  - /var/lib/sparky/jobs:/var/lib/sparky/jobs
+```
+
+To keep `/health` green when an operator forgets the mount, `JobStore`
+**defers** directory creation: boot stores the path only, the first
+submission lazily `mkdir(parents=True, exist_ok=True)`s it, and
+`/ready` reports `jobs_dir.status="not_ready"` with the configured
+path so MiMi monitoring catches the misconfiguration before any
+caller does. Submissions on an unwritable jobs dir return
+**`503 jobs_dir_unavailable`** with a stable envelope (no FS path
+leakage in the public message — the path lives in `request_id`-tagged
+gateway logs).
+
 ## Acceptance tests (PLAN §16, §18, §21)
 
 Unit coverage:

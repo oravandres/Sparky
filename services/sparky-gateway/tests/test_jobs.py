@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
 from fastapi.testclient import TestClient
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+API_CONTRACT_PATH = REPO_ROOT / "config" / "api-contract.yaml"
 
 
 def _submit_image(client: TestClient, auth_header: dict[str, str]) -> str:
@@ -133,3 +137,36 @@ def test_cancel_failed_job_returns_409(client: TestClient, auth_header: dict[str
 
     r = client.post(f"/v1/jobs/{job_id}/cancel", headers=auth_header)
     assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Contract parity — keep api-contract.yaml in lockstep with FastAPI handlers
+# ---------------------------------------------------------------------------
+
+
+def test_contract_jobs_routes_advertise_auth_and_terminal_responses() -> None:
+    """``config/api-contract.yaml`` must list every status code the
+    handlers can return for the shared job-control endpoints. Generated
+    clients use this list to decide what they retry vs surface."""
+    contract = yaml.safe_load(API_CONTRACT_PATH.read_text())
+
+    get_responses = contract["paths"]["/v1/jobs/{job_id}"]["get"]["responses"]
+    assert "200" in get_responses
+    assert "401" in get_responses, "GET /v1/jobs/{job_id} missing 401 in contract"
+    assert "404" in get_responses
+
+    cancel_responses = contract["paths"]["/v1/jobs/{job_id}/cancel"]["post"]["responses"]
+    assert "200" in cancel_responses
+    assert "401" in cancel_responses, "cancel missing 401 in contract"
+    assert "404" in cancel_responses
+    assert "409" in cancel_responses, "cancel missing 409 (job_terminal) in contract"
+
+
+def test_contract_defines_conflict_response_component() -> None:
+    """``components.responses.Conflict`` must exist so the cancel route's
+    409 reference resolves; the description must mention the terminal-state
+    rule so contract readers know when to expect it."""
+    contract = yaml.safe_load(API_CONTRACT_PATH.read_text())
+    conflict = contract["components"]["responses"]["Conflict"]
+    assert "terminal" in conflict["description"].lower()
+    assert conflict["content"]["application/json"]["schema"]["$ref"] == "#/components/schemas/Error"

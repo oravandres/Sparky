@@ -22,8 +22,9 @@ def health() -> dict[str, str]:
 
 @router.get("/ready")
 def ready(request: Request, response: Response) -> dict[str, Any]:
-    """Readiness: surfaces dependency status. Phase 3 only checks the registry;
-    runtime probes (vLLM, ComfyUI, audio) land in their respective phase PRs."""
+    """Readiness: surfaces dependency status. Phase 3 only checks the registry
+    and the file-backed job ledger; runtime probes (vLLM, ComfyUI, audio) land
+    in their respective phase PRs."""
     deps: dict[str, dict[str, str]] = {}
 
     registry = getattr(request.app.state, "registry", None)
@@ -41,6 +42,26 @@ def ready(request: Request, response: Response) -> dict[str, Any]:
                 "status": "not_ready",
                 "detail": "no active models in registry",
             }
+
+    # Jobs ledger (PLAN §18). Boot stays decoupled from the volume mount; we
+    # only flag readiness here so MiMi monitoring sees the misconfiguration
+    # before a media submission turns into a 503.
+    job_store = getattr(request.app.state, "job_store", None)
+    if job_store is None:
+        deps["jobs_dir"] = {"status": "not_ready", "detail": "job store not loaded"}
+    elif job_store.is_writable():
+        deps["jobs_dir"] = {
+            "status": "ready",
+            "detail": str(job_store.jobs_dir),
+        }
+    else:
+        deps["jobs_dir"] = {
+            "status": "not_ready",
+            "detail": (
+                f"jobs_dir {job_store.jobs_dir!s} missing or not writable; "
+                "media/audio submissions will return 503"
+            ),
+        }
 
     overall = "ready" if all(d["status"] == "ready" for d in deps.values()) else "not_ready"
     if overall != "ready":

@@ -158,6 +158,55 @@ def _accepted_payload(*, job_id: str, job_type: JobType) -> dict[str, str]:
     return {"job_id": job_id, "type": job_type, "status": "queued"}
 
 
+async def _enqueue_or_503(
+    *,
+    store: JobStore,
+    job_type: JobType,
+    model: str,
+    request_payload: dict[str, Any],
+    rid: str | None,
+) -> JSONResponse:
+    """Common create + redacted-503 mapping shared by image/video routes.
+
+    The ``OSError`` we surface comes from :meth:`JobStore._ensure_dir` and
+    indicates the host has not bind-mounted a writable ``jobs_dir`` (PLAN §8
+    / docker-compose.gateway.yml). The gateway returns ``503`` with a stable
+    envelope so callers can backoff while operators fix the mount.
+    """
+    try:
+        record = await store.create(
+            job_type=job_type,
+            model=model,
+            request=request_payload,
+        )
+    except OSError as exc:
+        log.error(
+            "media_job_jobs_dir_unwritable",
+            extra={
+                "request_id": rid,
+                "job_type": job_type,
+                "model": model,
+                "error": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=envelope(
+                "jobs_dir_unavailable",
+                "job ledger is not writable; consult gateway logs using request_id",
+                rid,
+            ),
+        ) from exc
+    log.info(
+        f"media_{job_type}_job_accepted",
+        extra={"request_id": rid, "job_id": record.job_id, "model": model},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=_accepted_payload(job_id=record.job_id, job_type=job_type),
+    )
+
+
 @router.post(
     "/v1/media/image/jobs",
     status_code=status.HTTP_202_ACCEPTED,
@@ -173,18 +222,12 @@ async def submit_image_job(
     _require_media_model(registry, model_id=body.model, expected_family="image", rid=rid)
 
     store: JobStore = request.app.state.job_store
-    record = await store.create(
+    return await _enqueue_or_503(
+        store=store,
         job_type="image",
         model=body.model,
-        request=body.model_dump(exclude_none=True),
-    )
-    log.info(
-        "media_image_job_accepted",
-        extra={"request_id": rid, "job_id": record.job_id, "model": body.model},
-    )
-    return JSONResponse(
-        status_code=status.HTTP_202_ACCEPTED,
-        content=_accepted_payload(job_id=record.job_id, job_type="image"),
+        request_payload=body.model_dump(exclude_none=True),
+        rid=rid,
     )
 
 
@@ -203,16 +246,10 @@ async def submit_video_job(
     _require_media_model(registry, model_id=body.model, expected_family="video", rid=rid)
 
     store: JobStore = request.app.state.job_store
-    record = await store.create(
+    return await _enqueue_or_503(
+        store=store,
         job_type="video",
         model=body.model,
-        request=body.model_dump(exclude_none=True),
-    )
-    log.info(
-        "media_video_job_accepted",
-        extra={"request_id": rid, "job_id": record.job_id, "model": body.model},
-    )
-    return JSONResponse(
-        status_code=status.HTTP_202_ACCEPTED,
-        content=_accepted_payload(job_id=record.job_id, job_type="video"),
+        request_payload=body.model_dump(exclude_none=True),
+        rid=rid,
     )
