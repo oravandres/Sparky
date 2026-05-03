@@ -81,14 +81,22 @@ return HTTP **502** (`runtime_error`), not a silently corrupted 200:
 - **Approve with a critical finding** — `final_recommendation="approve"`
   is rejected when at least one finding has `severity="critical"`
   (PLAN §15 quality rule: critical issues are not silently approved).
+- **Line without a path** — a finding with `path=null` and a non-null
+  `line` is rejected. Responses are emitted with `exclude_none=true`,
+  so this shape would surface to callers as a bare line number with
+  no file to anchor it. Cross-cutting findings must set both `path`
+  and `line` to `null`.
 - **Unknown path** — when the caller supplied `files[]`, every
   finding's `path` must match one of those entries. Cross-cutting
-  findings use `path=null`.
+  findings use `path=null` (and `line=null`).
 - **Line out of range** — when a finding references a supplied file,
   `line` must be a 1-indexed line inside that file's content.
 
-Diff-only reviews (no `files[]` supplied) skip the path/line checks
-since the gateway has no snapshot to validate against.
+Diff-only reviews (no `files[]` supplied) skip the unknown-path /
+line-out-of-range checks since the gateway has no snapshot to
+validate against, but the line-without-a-path invariant still
+applies — every finding must either anchor itself to a path or be
+fully cross-cutting.
 
 ## Model and budget defaults
 

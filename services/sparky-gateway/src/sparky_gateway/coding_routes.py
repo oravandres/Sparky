@@ -23,6 +23,10 @@ Each handler:
   4. Parses and validates the model JSON against a strict Pydantic
      response schema; any schema drift returns HTTP 502.
   5. Applies integrity checks the model cannot be trusted with:
+       - a finding cannot carry a ``line`` without a ``path`` —
+         responses are emitted with ``exclude_none=True``, so a
+         ``path=null`` / ``line=N`` shape would surface to callers as
+         a bare line number with no file to anchor it;
        - finding ``path`` values must reference a supplied file when
          the caller gave us files, so the reviewer cannot cite paths
          that do not exist in the submitted snapshot;
@@ -553,13 +557,42 @@ def _finalize_coding_response(
             ),
         )
 
-    # Invariants 2 & 3: file-scoped findings must reference supplied files
+    # Invariant 2: a finding cannot carry a line number without a path.
+    # Responses are emitted with `exclude_none=True`, so a `path=null` /
+    # `line=N` shape would surface to callers as a bare line number with
+    # no file to anchor it — PR-review and coding-agent consumers cannot
+    # use that, and it violates the gateway's promise to reject
+    # inconsistent references (PLAN §15). Treat it as schema drift.
+    for i, finding in enumerate(out.findings):
+        if finding.path is None and finding.line is not None:
+            log.warning(
+                "coding_finding_line_without_path",
+                extra={
+                    "request_id": rid,
+                    "model": model_id,
+                    "task": task,
+                    "finding_index": i,
+                    "line": finding.line,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=envelope(
+                    "runtime_error",
+                    "text runtime emitted a finding with a line but no path",
+                    rid,
+                ),
+            )
+
+    # Invariants 3 & 4: file-scoped findings must reference supplied files
     # and line numbers inside those files. Skipped when the caller did not
     # supply any files — diff-only reviews legitimately cannot be path-checked.
     if body.files:
         known_paths = {f.path: f.content for f in body.files}
         for i, finding in enumerate(out.findings):
             if finding.path is None:
+                # Cross-cutting finding; invariant 2 above already
+                # guaranteed `line is None`, so it is safe to skip.
                 continue
             if finding.path not in known_paths:
                 log.warning(

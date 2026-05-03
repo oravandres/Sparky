@@ -519,6 +519,59 @@ def test_review_accepts_null_path_when_files_supplied(
     assert r.status_code == 200
 
 
+def test_review_502_when_line_set_but_path_null_with_files(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """`path=null` + `line=N` is incoherent: `exclude_none=True` would
+    surface a bare line number with no file to anchor it. The gateway
+    must reject this as schema drift even when files are supplied."""
+    bad = dict(_REVIEW_OK)
+    bad["findings"] = [
+        {
+            "severity": "low",
+            "path": None,
+            "line": 1,
+            "title": "t",
+            "explanation": "e",
+            "recommendation": "r",
+        },
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "files": _FILES},
+    )
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "runtime_error"
+
+
+def test_review_502_when_line_set_but_path_null_no_files(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """The line-without-a-path invariant applies even on diff-only
+    reviews where the rest of the path/line checks are skipped."""
+    bad = dict(_REVIEW_OK_NO_FILES)
+    bad["findings"] = [
+        {
+            "severity": "low",
+            "path": None,
+            "line": 1,
+            "title": "t",
+            "explanation": "e",
+            "recommendation": "r",
+        },
+    ]
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(bad))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "diff": "--- a\n+++ b\n"},
+    )
+    assert r.status_code == 502
+    assert r.json()["error"]["code"] == "runtime_error"
+
+
 def test_review_accepts_empty_file_content(client: TestClient, auth_header: dict[str, str]) -> None:
     """Empty `__init__.py` / `.gitkeep` files are legitimate snapshot entries."""
     empty_files = [
@@ -698,6 +751,62 @@ def test_finalize_accepts_line_at_boundary() -> None:
     )
     result = _finalize_coding_response(body, out, rid="r1", model_id="nemo", task="review")
     assert result is out
+
+
+def test_finalize_rejects_line_without_path_with_files() -> None:
+    """Direct helper: `path=null` + `line=N` is rejected even when files
+    are supplied (the `continue` for cross-cutting findings must not
+    swallow line-only output)."""
+    files = [CodingFileIn.model_construct(path="a.py", content="x\n")]
+    body = _build_body(files=files)
+    out = CodingReviewResponseBody.model_validate(
+        {
+            "summary": "s",
+            "findings": [
+                {
+                    "severity": "low",
+                    "path": None,
+                    "line": 1,
+                    "title": "t",
+                    "explanation": "e",
+                    "recommendation": "r",
+                },
+            ],
+            "architecture_notes": [],
+            "tests_to_add": [],
+            "final_recommendation": "request_changes",
+        }
+    )
+    with pytest.raises(HTTPException) as ei:
+        _finalize_coding_response(body, out, rid="r1", model_id="nemo", task="review")
+    assert ei.value.status_code == 502
+
+
+def test_finalize_rejects_line_without_path_no_files() -> None:
+    """Direct helper: same invariant on diff-only reviews where the
+    `if body.files:` block is skipped entirely."""
+    body = _build_body()
+    out = CodingReviewResponseBody.model_validate(
+        {
+            "summary": "s",
+            "findings": [
+                {
+                    "severity": "low",
+                    "path": None,
+                    "line": 5,
+                    "title": "t",
+                    "explanation": "e",
+                    "recommendation": "r",
+                },
+            ],
+            "architecture_notes": [],
+            "tests_to_add": [],
+            "final_recommendation": "request_changes",
+        }
+    )
+    with pytest.raises(HTTPException) as ei:
+        _finalize_coding_response(body, out, rid="r1", model_id="nemo", task="review")
+    assert ei.value.status_code == 502
 
 
 def test_finalize_accepts_empty_file_content_line_one() -> None:
