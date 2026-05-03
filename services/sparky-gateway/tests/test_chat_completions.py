@@ -172,13 +172,14 @@ def test_chat_completions_runtime_unreachable(
     assert r.json()["error"]["code"] == "runtime_unavailable"
 
 
-def test_chat_completions_payload_too_large(auth_header: dict[str, str]) -> None:
+def test_chat_completions_payload_too_large(auth_header: dict[str, str], tmp_path: Path) -> None:
     settings = Settings(
         sparky_api_key=TEST_API_KEY,
         sparky_log_level="warning",
         sparky_model_registry_path=REGISTRY_PATH,
         sparky_logging_config_path=None,
         sparky_max_request_body_bytes=64,
+        jobs_dir=tmp_path / "jobs",
     )
     app = create_app(settings)
     with TestClient(app) as tc:

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
 
     sparky_model_registry_path: Path = Path("/opt/sparky/config/model-registry.yaml")
     sparky_logging_config_path: Path | None = None
+    # File-backed async job ledger (PLAN §18). Env var ``JOBS_DIR`` matches the
+    # PLAN §7.4 / §8 convention shared with MODELS_DIR / OUTPUTS_DIR; tests
+    # override via ``jobs_dir=...`` so they never write to /var.
+    jobs_dir: Path = Path("/var/lib/sparky/jobs")
 
     # Dev-only: exposes /docs, /redoc, /openapi.json (otherwise omitted — PLAN §12 auth surface).
     sparky_enable_openapi_docs: bool = False
