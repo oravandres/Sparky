@@ -26,9 +26,12 @@ send and the system prompt the gateway uses.
 
 ## Request payload
 
-At least one of `files`, `diff`, or `instructions` must be supplied —
-the gateway returns HTTP **422** for an empty request so the model is
-never prompted with nothing to review.
+At least one of `files`, `diff`, or `instructions` must carry a
+*materially non-empty* signal — `files` must have at least one entry,
+and `diff` / `instructions` must contain at least one non-whitespace
+character. The gateway returns HTTP **422** for payloads that only set
+blank or empty values for all three, so the model is never prompted
+with nothing to review.
 
 ```json
 {

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from sparky_gateway.coding_routes import (
     CodingFileIn,
@@ -19,6 +22,9 @@ from sparky_gateway.coding_routes import (
 )
 from sparky_gateway.config import Settings
 from sparky_gateway.main import create_app
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_API_CONTRACT_PATH = _REPO_ROOT / "config" / "api-contract.yaml"
 
 _SAMPLE_FILE_CONTENT = "line 1\nline 2\nline 3\n"
 _FILES = [
@@ -122,6 +128,58 @@ def test_review_requires_some_content(client: TestClient, auth_header: dict[str,
         json={"task": "review"},
     )
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # Empty files list with no other signal.
+        {"task": "review", "files": []},
+        # Empty diff strings (zero-length and whitespace-only) with no
+        # other signal — match the OpenAPI `pattern: "\S"` constraint.
+        {"task": "review", "diff": ""},
+        {"task": "review", "diff": "   \n\t"},
+        # Empty / whitespace-only instructions with no other signal.
+        {"task": "review", "instructions": ""},
+        {"task": "review", "instructions": "   "},
+        # All three present but materially empty — the all-blank case the
+        # `anyOf` in `config/api-contract.yaml` is meant to reject.
+        {"task": "review", "files": [], "diff": "", "instructions": "   "},
+    ],
+    ids=[
+        "files-empty-list",
+        "diff-empty-string",
+        "diff-whitespace-only",
+        "instructions-empty-string",
+        "instructions-whitespace-only",
+        "all-three-blank",
+    ],
+)
+def test_review_rejects_materially_empty_payloads(
+    client: TestClient,
+    auth_header: dict[str, str],
+    payload: dict[str, Any],
+) -> None:
+    """Mirror `config/api-contract.yaml`'s anyOf: at least one of files,
+    diff, or instructions must be *materially non-empty*. The gateway
+    must reject blank-only payloads with 422 so generated clients and
+    server agree."""
+    r = client.post("/v1/coding/review", headers=auth_header, json=payload)
+    assert r.status_code == 422
+
+
+def test_review_accepts_files_with_blank_companion_strings(
+    client: TestClient, auth_header: dict[str, str]
+) -> None:
+    """A non-empty `files` list satisfies the rule even if `diff` and
+    `instructions` are blank — matches `_require_something_to_review`."""
+    client.app.state.http_client.post = AsyncMock(return_value=_mock_upstream(_REVIEW_OK))
+    r = client.post(
+        "/v1/coding/review",
+        headers=auth_header,
+        json={"task": "review", "files": _FILES, "diff": "", "instructions": "   "},
+    )
+    assert r.status_code == 200
 
 
 def test_review_rejects_duplicate_file_paths(
@@ -666,3 +724,77 @@ def test_finalize_accepts_empty_file_content_line_one() -> None:
     )
     result = _finalize_coding_response(body, out, rid="r1", model_id="nemo", task="review")
     assert result is out
+
+
+# ---------------------------------------------------------------------------
+# OpenAPI contract drift-guard
+#
+# Generated clients are derived from `config/api-contract.yaml`; if the
+# `anyOf` constraint on `CodingReviewRequest` ever loosens back to mere
+# key-presence checks, clients will once again accept payloads (e.g.
+# `files: []`, `diff: ""`, `instructions: "   "`) that the FastAPI
+# validator rejects with 422. These tests pin the published shape so a
+# future edit cannot silently widen the contract again.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _coding_review_request_schema() -> dict[str, Any]:
+    raw: dict[str, Any] = yaml.safe_load(_API_CONTRACT_PATH.read_text(encoding="utf-8"))
+    return raw["components"]["schemas"]["CodingReviewRequest"]
+
+
+def test_contract_anyOf_requires_materially_non_empty_inputs(
+    _coding_review_request_schema: dict[str, Any],
+) -> None:
+    """`anyOf` must constrain *each* branch — not just key presence — so
+    the contract matches `_require_something_to_review` (PLAN §15)."""
+    schema = _coding_review_request_schema
+    branches = schema["anyOf"]
+    by_required = {tuple(b["required"]): b for b in branches}
+
+    files_branch = by_required[("files",)]
+    assert files_branch["properties"]["files"]["minItems"] == 1, (
+        "files anyOf branch must require minItems: 1 to reject `files: []`"
+    )
+
+    diff_branch = by_required[("diff",)]
+    assert diff_branch["properties"]["diff"]["pattern"] == r"\S", (
+        "diff anyOf branch must require a non-whitespace character to "
+        "reject `diff: ''` and whitespace-only diffs"
+    )
+
+    instructions_branch = by_required[("instructions",)]
+    assert instructions_branch["properties"]["instructions"]["pattern"] == r"\S", (
+        "instructions anyOf branch must require a non-whitespace character "
+        "to reject blank-only instructions"
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"task": "review"},
+        {"task": "review", "files": []},
+        {"task": "review", "diff": ""},
+        {"task": "review", "diff": " \t\n"},
+        {"task": "review", "instructions": ""},
+        {"task": "review", "instructions": "   "},
+        {"task": "review", "files": [], "diff": "", "instructions": " "},
+    ],
+    ids=[
+        "no-input-keys",
+        "files-empty",
+        "diff-empty",
+        "diff-whitespace",
+        "instructions-empty",
+        "instructions-whitespace",
+        "all-three-blank",
+    ],
+)
+def test_pydantic_rejects_what_contract_anyOf_rejects(payload: dict[str, Any]) -> None:
+    """Lock the FastAPI validator to the same rule the OpenAPI `anyOf`
+    expresses. If either side loosens, this test fails before clients
+    do."""
+    with pytest.raises(ValidationError):
+        CodingReviewRequestBody.model_validate(payload)
