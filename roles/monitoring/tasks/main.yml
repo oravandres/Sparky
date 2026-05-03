@@ -1,0 +1,65 @@
+---
+# Phase 10 — monitoring + logging artifacts (PLAN §19).
+#
+# This role only DEPLOYS files; it does NOT start the monitoring stack.
+# The operator brings exporters up explicitly with
+# `scripts/start-monitoring.sh up -d` so a broken DCGM/runtime can't make
+# this playbook fail half-way through and leave the appliance in a partial
+# state.
+
+- name: Assert /opt/sparky/services exists (provisioned by roles/base)
+  ansible.builtin.stat:
+    path: "{{ sparky_monitoring_compose_dst_dir }}"
+  register: sparky_monitoring_dst_dir_stat
+
+- name: Fail when /opt/sparky/services is missing (run roles/base first)
+  ansible.builtin.fail:
+    msg: >-
+      {{ sparky_monitoring_compose_dst_dir }} does not exist.
+      Run playbooks/10-base-os.yml before playbooks/110-monitoring.yml so
+      roles/base can lay down the /opt/sparky service tree.
+  when: not sparky_monitoring_dst_dir_stat.stat.exists | default(false)
+
+- name: Deploy monitoring compose unit
+  ansible.builtin.copy:
+    src: "{{ sparky_monitoring_compose_src }}"
+    dest: "{{ sparky_monitoring_compose_dst }}"
+    owner: root
+    group: "{{ sparky_service_group }}"
+    mode: "0644"
+  when: sparky_monitoring_deploy_compose | bool
+
+- name: Ensure /var/log/sparky/<service> directories exist for file mirrors
+  ansible.builtin.file:
+    path: "/var/log/sparky/{{ item }}"
+    state: directory
+    owner: "{{ sparky_service_user }}"
+    group: "{{ sparky_service_group }}"
+    mode: "0750"
+  loop:
+    - sparky-gateway
+    - sparky-worker
+    - sparky-node-exporter
+    - sparky-dcgm-exporter
+
+- name: Deploy logrotate policy for /var/log/sparky
+  ansible.builtin.copy:
+    src: "{{ sparky_logrotate_src }}"
+    dest: "{{ sparky_logrotate_dst }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: sparky_monitoring_deploy_logrotate | bool
+
+- name: Validate logrotate config (debug-mode dry run)
+  ansible.builtin.command:
+    argv:
+      - logrotate
+      - --debug
+      - "{{ sparky_logrotate_dst }}"
+  register: sparky_logrotate_dryrun
+  changed_when: false
+  failed_when:
+    - sparky_logrotate_dryrun.rc != 0
+    - "'reading config file' not in (sparky_logrotate_dryrun.stderr | default(''))"
+  when: sparky_monitoring_deploy_logrotate | bool

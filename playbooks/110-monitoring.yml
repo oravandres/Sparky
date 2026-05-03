@@ -1,0 +1,19 @@
+---
+# Phase 10 — monitoring + logging (PLAN §19).
+#
+# Deploys the monitoring compose unit and logrotate policy. The compose
+# stack itself is brought up by `scripts/start-monitoring.sh up -d` so an
+# operator can choose when to expose 9100/9400 on the LAN.
+#
+# Run sequence:
+#   ansible-playbook -i inventory/hosts.yml playbooks/10-base-os.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/110-monitoring.yml
+#   ssh sparky 'cd /opt/sparky/services && docker compose -f docker-compose.monitoring.yml up -d'
+#
+# (Or use scripts/start-monitoring.sh from a checkout on the appliance.)
+- name: Sparky Phase 10 — monitoring artifacts
+  hosts: sparky
+  gather_facts: true
+  become: true
+  roles:
+    - role: monitoring

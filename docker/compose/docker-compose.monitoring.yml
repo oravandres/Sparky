@@ -1,0 +1,93 @@
+---
+# Sparky monitoring compose unit — see PLAN.md §4.1, §19.
+#
+# Deploys node_exporter on TCP/9100 and (optionally) NVIDIA DCGM exporter
+# on TCP/9400. PLAN §10 firewall scopes both ports to the MiMi monitoring
+# network only — exporters intentionally bind on the host network so the
+# kernel sees actual host metrics.
+#
+# Bring it up with `scripts/start-monitoring.sh up -d`. The DCGM exporter
+# is gated by the `gpu` Compose profile and only activates when
+# ENABLE_GPU_EXPORTER=true (PLAN §19 acceptance: "if supported on
+# DGX Spark"). When the appliance ships without GPU exporter support, run
+# without the profile and document the gap in docs/operations.md.
+#
+# MiMi-side scrape job example: config/prometheus/sparky-scrape.example.yml
+#
+# WARNING: do not enable LAN-facing scraping without first running
+# playbooks/10-base-os.yml so UFW restricts 9100/9400 to
+# sparky_monitoring_cidr.
+
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: sparky-node-exporter
+    restart: unless-stopped
+    # Host networking so the exporter sees real CPU / RAM / NIC metrics.
+    # PLAN §10 UFW scopes 9100 to sparky_monitoring_cidr only.
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
+      - --web.listen-address=:9100
+    volumes:
+      - /:/host:ro,rslave
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: "sparky-node-exporter"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O - http://127.0.0.1:9100/metrics
+          | head -n 1
+          | grep -q '^# HELP'
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # DCGM exporter — gated by the `gpu` profile so operators on a host
+  # without working DCGM/NVIDIA Container Toolkit can still bring up
+  # node-exporter cleanly. scripts/start-monitoring.sh activates the
+  # profile when ENABLE_GPU_EXPORTER=true (default in
+  # config/sparky.env.example). The DGX Spark / GB10 NVIDIA stack must
+  # be validated by Phase 2 (playbooks/40-nvidia-validation.yml) before
+  # enabling this exporter on the appliance.
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.7-3.4.2-ubuntu22.04
+    container_name: sparky-dcgm-exporter
+    profiles:
+      - gpu
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - SYS_ADMIN
+    runtime: nvidia
+    environment:
+      - DCGM_EXPORTER_LISTEN=:9400
+      - NVIDIA_VISIBLE_DEVICES=all
+    logging:
+      driver: journald
+      options:
+        tag: "sparky-dcgm-exporter"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O - http://127.0.0.1:9400/metrics
+          | head -n 1
+          | grep -q '^# HELP'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

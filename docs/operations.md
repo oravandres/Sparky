@@ -159,17 +159,33 @@ Allow:
 Block direct external access to `8000`, `8001`, `8188`, `9001`, `9002`
 unless explicitly proxied through the authenticated gateway.
 
-## Logging (PLAN §19)
+## Monitoring & logging (Phase 10 — PLAN §19)
 
-- Structured JSON to stdout for every Sparky service; format defined in
-  `config/logging.yaml`.
-- Compose services use the journald driver with `tag={{.Name}}` so
-  `journalctl -u sparky-*` works.
-- Log rotation via `/etc/logrotate.d/sparky`: daily, 14-day retention,
-  compressed, copytruncate.
-- Mirrored to `/var/log/sparky/<service>/<service>.log`.
-- Forwarding logs to MiMi (Loki / promtail) is out of scope for
-  Phase 10; document here when MiMi is ready to pull.
+The full operator runbook for exporters, scrape config, retention, and
+log shipping lives in
+[`docs/monitoring.md`](monitoring.md). High points:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/110-monitoring.yml
+./scripts/start-monitoring.sh up -d
+SPARKY_API_KEY=... ./scripts/smoke-test-monitoring.sh
+```
+
+Quick reference:
+
+- Gateway `/metrics` requires `Authorization: Bearer <SPARKY_API_KEY>`
+  (config/api-contract.yaml). MiMi Prometheus mounts the key via
+  `bearer_token_file` — see
+  [`config/prometheus/sparky-scrape.example.yml`](../config/prometheus/sparky-scrape.example.yml).
+- node_exporter on `:9100` and DCGM exporter on `:9400` (when
+  `ENABLE_GPU_EXPORTER=true`) speak unauthenticated Prometheus —
+  access is scoped by the host firewall (PLAN §10) to
+  `sparky_monitoring_cidr`.
+- Structured JSON logs ship to journald with `tag=<container-name>`;
+  `/etc/logrotate.d/sparky` handles file mirrors under
+  `/var/log/sparky/<service>/<service>.log` (daily, 14-day retention,
+  copytruncate). Forwarding to MiMi Loki / promtail is intentionally
+  out of scope for Phase 10.
 
 ## Backups
 

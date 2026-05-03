@@ -1,0 +1,32 @@
+---
+# Monitoring role defaults — PLAN.md §19 Phase 10.
+
+sparky_service_user: sparky
+sparky_service_group: sparky
+
+# Repo paths assumed by playbooks/110-monitoring.yml. role_path is set by
+# Ansible to roles/monitoring/, so the playbook sources the canonical files
+# from the repo, not a checkout drift.
+sparky_monitoring_compose_src: "{{ role_path }}/../../docker/compose/docker-compose.monitoring.yml"
+sparky_logrotate_src: "{{ role_path }}/../../config/logrotate.d/sparky"
+
+# Where the compose file lives on the appliance once roles/base laid down
+# /opt/sparky/services (PLAN §8). Keep the filename so the systemd
+# operator runbook is one liner.
+sparky_monitoring_compose_dst_dir: /opt/sparky/services
+sparky_monitoring_compose_dst: "{{ sparky_monitoring_compose_dst_dir }}/docker-compose.monitoring.yml"
+
+# Logrotate landing path — read by the system logrotate.timer.
+sparky_logrotate_dst: /etc/logrotate.d/sparky
+
+# Toggles. The role itself never starts the compose stack; that is the
+# operator's job (scripts/start-monitoring.sh) so a misconfigured exporter
+# can't take SSH down. We only deploy artifacts and assert prerequisites.
+sparky_monitoring_deploy_logrotate: true
+sparky_monitoring_deploy_compose: true
+
+# Whether the GPU exporter profile should be enabled when the operator
+# later runs `scripts/start-monitoring.sh up -d`. Mirrored to
+# /etc/sparky/sparky.env (PLAN §7.4 ENABLE_GPU_EXPORTER) but the env file
+# is owned by roles/base — we only document the expected value here.
+sparky_enable_gpu_exporter: true

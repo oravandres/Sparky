@@ -38,6 +38,14 @@ ngc_api_key: ""                       # NVIDIA NGC API key
 # in MiMi-Secrets, and mirrored to /etc/sparky/sparky.env on the host
 # (mode 0640, root:sparky). See PLAN.md §10.
 
+# --- Phase 10 monitoring (playbooks/110-monitoring.yml) ---
+# Set the toggles to match the appliance — exporters are still
+# brought up explicitly via scripts/start-monitoring.sh after the role
+# deploys files (PLAN.md §19).
+# sparky_monitoring_deploy_compose: true
+# sparky_monitoring_deploy_logrotate: true
+# sparky_enable_gpu_exporter: true     # mirrored as ENABLE_GPU_EXPORTER
+
 # --- Optional K3s join controls (PLAN.md §2.1) ---
 sparky_join_k3s: false
 sparky_node_labels:

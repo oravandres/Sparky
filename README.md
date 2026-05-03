@@ -109,7 +109,7 @@ Sparky/
 │
 ├── docker/compose/                   # Compose stacks (PLAN §7.2)
 ├── scripts/                          # Smoke tests, start scripts (PLAN §21)
-└── docs/                             # Architecture, ops, troubleshooting, benchmarks
+└── docs/                             # Architecture, ops, monitoring, troubleshooting, benchmarks
 ```
 
 ## Sibling repository
