@@ -42,6 +42,34 @@ GPU container probe (Phase 2, after Docker + NVIDIA Container Toolkit):
 
 Use `./scripts/check-gpu.sh --host-only` (or `SPARKY_GPU_CHECK_HOST_ONLY=1`) only when Docker or the NVIDIA Container Toolkit is intentionally absent; a full appliance install should pass the container probe.
 
+## Nemotron 3 Super (Phase 4 — PLAN §13)
+
+Full operator runbook: [`docs/nemotron.md`](nemotron.md). High points:
+
+```bash
+# One-time: fetch the reasoning parser plugin
+./scripts/download-nemotron-parser.sh
+
+# Start vLLM (cold cache: ~10-30 min for the 70 GB pull on first run)
+SPARKY_ENV_FILE=/etc/sparky/sparky.env ./scripts/start-nemotron-vllm.sh up -d
+
+# Smoke through the gateway (gated; HF_TOKEN must be in sparky.env)
+SPARKY_API_KEY=... ./scripts/smoke-test-text.sh
+```
+
+The compose unit at
+[`docker/compose/docker-compose.nemotron.yml`](../docker/compose/docker-compose.nemotron.yml)
+follows NVIDIA's [DGX Spark deployment guide](https://docs.nvidia.com/nemotron/nightly/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide/README.html)
+verbatim — `vllm/vllm-openai:cu130-nightly` with the four required env
+vars (`VLLM_NVFP4_GEMM_BACKEND=marlin`, `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`,
+`VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm`, `VLLM_USE_FLASHINFER_MOE_FP4=0`)
+and the documented serve flags (FP8 KV cache, FP4 quant, Marlin MoE, MTP
+speculative decoding). Don't edit without rerunning the §22 / §23 benchmarks.
+
+TRT-LLM serving (PLAN §13.2) is opt-in; vLLM remains the default until
+TRT-LLM has run two consecutive weeks without crashes / OOMs / quality
+regressions. `scripts/start-nemotron-trtllm.sh` is a documented stub.
+
 ## Sparky Gateway (Phase 3 — PLAN §12)
 
 Local development:

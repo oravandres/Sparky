@@ -1,0 +1,116 @@
+---
+# Sparky Nemotron 3 Super (NVFP4) compose unit — see PLAN.md §13 (Phase 4),
+# §4.1 (service topology), §4.3 (Tier A always-hot), and §3 (approved model
+# matrix).
+#
+# Source of truth for the serve command + env vars:
+#   https://docs.nvidia.com/nemotron/nightly/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide/README.html
+#
+# This stack runs ON the appliance. Bring it up with:
+#
+#   ./scripts/download-nemotron-parser.sh           # one-time, fetches super_v3_reasoning_parser.py
+#   SPARKY_ENV_FILE=/etc/sparky/sparky.env \
+#     ./scripts/start-nemotron-vllm.sh up -d
+#
+# Bind: container 0.0.0.0:8000 -> host 127.0.0.1:8000 (PLAN §4.1 — vLLM
+# is loopback-only; external callers reach it via the gateway proxy).
+# HF_TOKEN is gated-model required and resolves via Compose substitution
+# from /etc/sparky/sparky.env, never via committed `environment:` literals
+# (PLAN §10).
+
+services:
+  sparky-nemotron-vllm:
+    image: vllm/vllm-openai:cu130-nightly
+    container_name: sparky-nemotron-vllm
+    restart: unless-stopped
+    runtime: nvidia
+    # The vLLM image needs IPC=host on multi-process configurations;
+    # single-GPU DGX Spark is fine with the default.
+    ipc: shareable
+    ports:
+      # Loopback-only — gateway is the only allowed caller (PLAN §2.3, §4.1).
+      - "127.0.0.1:8000:8000"
+    environment:
+      # NVIDIA DGX Spark deployment guide — DO NOT change without rerunning
+      # the documented benchmarks (PLAN §13.1 §22 acceptance).
+      VLLM_NVFP4_GEMM_BACKEND: marlin
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      VLLM_FLASHINFER_ALLREDUCE_BACKEND: trtllm
+      VLLM_USE_FLASHINFER_MOE_FP4: "0"
+      # HF_TOKEN is gated-model required (NVIDIA-Nemotron-3-Super is gated).
+      # Resolved by Compose substitution from --env-file at run time so the
+      # value is not committed in YAML (PLAN §10).
+      HF_TOKEN: "${HF_TOKEN:?HF_TOKEN must be set in /etc/sparky/sparky.env to pull the gated Nemotron weights (PLAN §10)}"
+    volumes:
+      # Hugging Face weight cache lives on the data NVMe, not /root inside
+      # the container ephemeral layer. Mount the host path roles/storage
+      # provisions: /data/cache/huggingface (PLAN §8 + roles/storage).
+      - /data/cache/huggingface:/root/.cache/huggingface
+      # Reasoning parser plugin — fetched by scripts/download-nemotron-parser.sh
+      # once and stored under /opt/sparky/config/nemotron/. Mounted read-only
+      # at the path the serve command expects.
+      - /opt/sparky/config/nemotron/super_v3_reasoning_parser.py:/app/super_v3_reasoning_parser.py:ro
+    command:
+      - --model
+      - nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+      # Match config/model-registry.yaml id so /v1/chat/completions through
+      # the gateway round-trips with the same model id callers see in
+      # GET /v1/models (PLAN §3, §5.1).
+      - --served-model-name
+      - nemotron-3-super-120b-a12b-nvfp4
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --async-scheduling
+      - --dtype
+      - auto
+      - --kv-cache-dtype
+      - fp8
+      - --tensor-parallel-size
+      - "1"
+      - --pipeline-parallel-size
+      - "1"
+      - --data-parallel-size
+      - "1"
+      - --trust-remote-code
+      - --gpu-memory-utilization
+      - "0.90"
+      - --enable-chunked-prefill
+      - --max-num-seqs
+      - "4"
+      - --max-model-len
+      - "1000000"
+      - --moe-backend
+      - marlin
+      - --mamba_ssm_cache_dtype
+      - float32
+      - --quantization
+      - fp4
+      - --speculative_config
+      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+      - --reasoning-parser-plugin
+      - /app/super_v3_reasoning_parser.py
+      - --reasoning-parser
+      - super_v3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+    logging:
+      driver: journald
+      options:
+        tag: "sparky-nemotron-vllm"
+    healthcheck:
+      # vLLM exposes /health once the model has loaded. First-load on a
+      # cold cache pulls ~70 GB so start_period is intentionally generous;
+      # subsequent restarts come up in seconds.
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',
+          timeout=5).status==200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30m
