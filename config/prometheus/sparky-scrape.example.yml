@@ -1,0 +1,60 @@
+---
+# Example Prometheus scrape config for MiMi to ingest Sparky metrics —
+# see PLAN.md §19 (Phase 10 monitoring) and §10 (auth).
+#
+# This file lives in the Sparky repo for documentation and Prometheus
+# config validation; the real scrape configuration is owned by MiMi
+# (mimi-monitoring repo) per PLAN §1.2 ("MiMi owns monitoring").
+#
+# Two facts that make this non-trivial:
+#
+#   1. /metrics on the gateway requires the same Bearer token as every
+#      other authenticated route (config/api-contract.yaml:/metrics).
+#      MiMi must mount the sealed-secret value at the path referenced by
+#      bearer_token_file.
+#
+#   2. node_exporter and dcgm-exporter are NOT behind the gateway —
+#      they speak the standard Prometheus exposition format on the host
+#      ports listed in PLAN.md §4.1 (9100 / 9400). Access control comes
+#      from the host firewall (PLAN §10 UFW rules scope 9100/9400 to
+#      sparky_monitoring_cidr).
+#
+# Drop into MiMi's prometheus.yml under `scrape_configs:`. Replace
+# `sparky.mimi.local` with the host that resolves on your LAN.
+
+- job_name: sparky-gateway
+  scheme: http
+  metrics_path: /metrics
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  bearer_token_file: /etc/prometheus/secrets/sparky-api-key
+  static_configs:
+    - targets:
+        - "sparky.mimi.local:8080"
+      labels:
+        appliance: sparky
+        component: gateway
+
+- job_name: sparky-node-exporter
+  scheme: http
+  metrics_path: /metrics
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  static_configs:
+    - targets:
+        - "sparky.mimi.local:9100"
+      labels:
+        appliance: sparky
+        component: node
+
+- job_name: sparky-dcgm-exporter
+  scheme: http
+  metrics_path: /metrics
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  static_configs:
+    - targets:
+        - "sparky.mimi.local:9400"
+      labels:
+        appliance: sparky
+        component: gpu

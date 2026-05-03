@@ -1,0 +1,30 @@
+# Sparky log rotation — see PLAN.md §19.
+#
+# This file is deployed to /etc/logrotate.d/sparky by roles/monitoring.
+# It applies to file-mirrored service logs under /var/log/sparky/<service>/.
+# Compose services log to journald by default (PLAN §19); journald handles
+# its own retention via journald.conf. This logrotate stanza only covers
+# bind-mounted log files (e.g. gateway request logs that the operator chose
+# to mirror to disk via a journald shipper or Compose volume).
+#
+# Policy (PLAN §19):
+#   - daily rotation
+#   - 14-day retention
+#   - compressed after one rotation
+#   - copytruncate so journald shippers / file appenders don't lose their handle
+#   - notifempty / missingok so operators can deploy this before the dirs exist
+#
+# Validate after edits with: logrotate -d /etc/logrotate.d/sparky
+
+/var/log/sparky/*/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    copytruncate
+    missingok
+    notifempty
+    create 0640 sparky sparky
+    su root sparky
+    sharedscripts
+}
