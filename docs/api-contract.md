@@ -58,11 +58,16 @@ duration, unsafe URIs) rather than failing deep inside a worker:
 definitions in `services/sparky-gateway/`. CI (PLAN §22) lints both for
 drift; PRs that change a route must update both files in the same change.
 
-## Implemented in Phase 3
+## Implemented families
 
-`/health`, `/ready`, `/v1/models`, and `/metrics` are live in
-[`services/sparky-gateway/`](../services/sparky-gateway/). All other
-families above are scaffolded in the OpenAPI document and land in their
-respective phase PRs (PLAN §25). Until then the gateway returns the
-documented schema for the Phase 3 routes only — calls to unimplemented
+- Phase 3 (gateway scaffold): `/health`, `/ready`, `/v1/models`, `/metrics`.
+- Phase 4 (text proxy): `POST /v1/chat/completions`.
+- Phase 4a (reasoning): `POST /v1/reasoning/analyze`, `POST /v1/reasoning/compare`.
+- Phase 5 (agentic RAG): `POST /v1/agentic-rag/{plan,evaluate-evidence,synthesize,verify,finalize}`
+  — see [`agentic-rag.md`](agentic-rag.md).
+- Phase 6 (coding intelligence): `POST /v1/coding/{review,architecture,refactor-plan,security-review}`
+  — see [`coding.md`](coding.md).
+
+Media (§16), audio (§17), and job control (§18) land in their
+respective phase PRs (PLAN §25). Until then calls to unimplemented
 paths return `404` with the standard error envelope.
